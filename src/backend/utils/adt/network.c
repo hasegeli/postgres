@@ -596,6 +596,36 @@ network_supeq(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(false);
 }
 
+Datum
+network_overlap(PG_FUNCTION_ARGS)
+{
+	inet	   *a1 = PG_GETARG_INET_PP(0);
+	inet	   *a2 = PG_GETARG_INET_PP(1);
+
+	if (ip_family(a1) == ip_family(a2))
+	{
+		PG_RETURN_BOOL(bitncmp(ip_addr(a1), ip_addr(a2),
+					   Min(ip_bits(a1), ip_bits(a2))) == 0);
+	}
+
+	PG_RETURN_BOOL(false);
+}
+
+Datum
+network_adjacent(PG_FUNCTION_ARGS)
+{
+	inet	   *a1 = PG_GETARG_INET_PP(0);
+	inet	   *a2 = PG_GETARG_INET_PP(1);
+
+	if (ip_family(a1) == ip_family(a2))
+	{
+		PG_RETURN_BOOL(bitncmp(ip_addr(a1), ip_addr(a2),
+					   Min(ip_bits(a1), ip_bits(a2))) != 0);
+	}
+
+	PG_RETURN_BOOL(true);
+}
+
 /*
  * Extract data from a network datatype.
  */
