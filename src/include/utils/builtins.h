@@ -892,6 +892,7 @@ extern Datum network_adjacent(PG_FUNCTION_ARGS);
 extern Datum network_network(PG_FUNCTION_ARGS);
 extern Datum network_netmask(PG_FUNCTION_ARGS);
 extern Datum network_hostmask(PG_FUNCTION_ARGS);
+extern Datum network_union_transfn(PG_FUNCTION_ARGS);
 extern Datum network_masklen(PG_FUNCTION_ARGS);
 extern Datum network_family(PG_FUNCTION_ARGS);
 extern Datum network_broadcast(PG_FUNCTION_ARGS);

@@ -925,6 +925,92 @@ network_hostmask(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Returns the smallest possible network which contain both of the
+ * inputs. Smallest network means biggest netmask.
+ * Warning:
+ *		Return value does not trimmed. It would not be useful
+ *		to use it directly for two input host address. Use
+ *		inet_to_cidr to get proper network address.
+ * Another warning:
+ *		It returns empty inet for inputs which are not from
+ *		same IP family. Empty input should not be sent out.
+ */
+static inet *
+network_union_internal(inet *a1, inet *a2)
+{
+	inet		   *dst;
+	int				order;
+	unsigned int	byte,
+					nbits;
+	unsigned char   cmp;
+
+	/* Make sure any unused bits are zeroed */
+	dst = (inet *) palloc0(sizeof(inet));
+
+	/* Union of different families does not mean anything */
+	if (ip_family(a1) == ip_family(a2))
+	{
+		/* Initialize new inet */
+		ip_family(dst) = ip_family(a1);
+		ip_bits(dst) = Min(ip_bits(a1), ip_bits(a2));
+
+		if (ip_bits(dst) > 0)
+		{
+			/* Calculate maximum common bytes */
+			byte = (ip_bits(dst) + 7) / 8;
+
+			/* Compare whole addresses */
+			order = memcmp(ip_addr(a1), ip_addr(a2), byte);
+
+			/* Choose the smaller */
+			if (order < 0)
+				memcpy(ip_addr(dst), ip_addr(a1), byte);
+			else
+				memcpy(ip_addr(dst), ip_addr(a2), byte);
+
+			if (order != 0)
+			{
+				/* Compare from most common bytes to least common bytes */
+				while (memcmp(ip_addr(a1), ip_addr(a2), --byte) != 0);
+
+				/* Calculate bits to be checked */
+				if (byte == ip_bits(dst) / 8)
+					nbits = ip_bits(dst) % 8;
+				else
+					nbits = 7;
+
+				if (nbits > 0)
+				{
+					/* Calculate different bits */
+					cmp = ip_addr(a1)[byte] ^ ip_addr(a2)[byte];
+
+					/* Compare from most common bits to least common bits */
+					while (nbits > 0 && cmp >> (8 - nbits))
+						--nbits;
+				}
+
+				/* Reset bits using common bytes and bits */
+				ip_bits(dst) = (byte * 8) + nbits;
+			}
+		}
+	}
+
+	SET_INET_VARSIZE(dst);
+	return dst;
+}
+
+Datum
+network_union_transfn(PG_FUNCTION_ARGS)
+{
+	inet	   *a1 = PG_GETARG_INET_PP(0),
+			   *a2 = PG_GETARG_INET_PP(1);
+
+	if (ip_family(a1) == ip_family(a2))
+		PG_RETURN_INET_P(network_union_internal(a1, a2));
+	PG_RETURN_NULL();
+}
+
+/*
  * Convert a value of a network datatype to an approximate scalar value.
  * This is used for estimating selectivities of inequality operators
  * involving network types.

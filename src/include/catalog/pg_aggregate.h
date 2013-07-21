@@ -238,6 +238,9 @@ DATA(insert ( 3545	bytea_string_agg_transfn	bytea_string_agg_finalfn	0	2281	0	_n
 /* json */
 DATA(insert ( 3175	json_agg_transfn	json_agg_finalfn	0	2281	0	_null_ ));
 
+/* inet */
+DATA(insert ( 4053	network_union_transfn	cidr	0	869		_null_ ));
+
 /*
  * prototypes for functions in pg_aggregate.c
  */
