@@ -356,6 +356,13 @@ DATA(insert (	3659   3614 3614 2 3656 ));
 DATA(insert (	3659   3614 3614 3 3657 ));
 DATA(insert (	3659   3614 3614 4 3658 ));
 DATA(insert (	3659   3614 3614 5 2700 ));
+DATA(insert (	4049   869  869  1 4042 ));
+DATA(insert (	4049   869  869  2 4043 ));
+DATA(insert (	4049   869  869  3 4044 ));
+DATA(insert (	4049   869  869  4 4045 ));
+DATA(insert (	4049   869  869  5 4046 ));
+DATA(insert (	4049   869  869  6 4047 ));
+DATA(insert (	4049   869  869  7 4048 ));
 
 
 /* sp-gist */
