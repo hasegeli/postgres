@@ -2167,6 +2167,8 @@ DATA(insert OID = 2633 (  inetmi			PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 20 "
 DATA(insert OID = 4052 (  network_union_transfn	PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 869 "869 869" _null_ _null_ _null_ _null_ network_union_transfn _null_ _null_ _null_ ));
 DATA(insert OID = 4053 (  network_union		PGNSP PGUID 12 1 0 0 0 t f f f f f i 1 0 650 "869" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
 DESCR("union of two networks");
+DATA(insert OID = 4062 (  firstsubnet		PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 650 "650" _null_ _null_ _null_ _null_ network_subnet_first _null_ _null_ _null_ ));
+DATA(insert OID = 4063 (  lastsubnet		PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 650 "650" _null_ _null_ _null_ _null_ network_subnet_last _null_ _null_ _null_ ));
 
 DATA(insert OID = 1690 ( time_mi_time		PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 1186 "1083 1083" _null_ _null_ _null_ _null_	time_mi_time _null_ _null_ _null_ ));
 

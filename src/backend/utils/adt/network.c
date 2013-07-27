@@ -1011,6 +1011,63 @@ network_union_transfn(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Returns one of the who biggest sub-networks of the input.
+ * Last network bit should be set for the last one.
+ * Warning:
+ *		Return value does not trimmed. It would not be useful
+ *		to use it directly for two input host address.
+ */
+static inet *
+network_subnet_internal(inet *src, bool set_last_network_bit)
+{
+	inet	   *dst;
+
+	/* There must be host bits available */
+	if (ip_bits(src) == ip_maxbits(src))
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
+				 errmsg("no subnet available in %s",
+						network_out(src, true))));
+
+	/* Make sure any unused bits are zeroed */
+	dst = (inet *) palloc0(sizeof(inet));
+
+	/* Initialize new inet */
+	ip_family(dst) = ip_family(src);
+	ip_bits(dst) = ip_bits(src) + 1;
+
+	/* Copy maximum bytes */
+	memcpy(ip_addr(dst), ip_addr(src), (ip_bits(src) + 7) / 8);
+
+	/* Set the last network bit */
+	if (set_last_network_bit)
+		ip_addr(dst)[ip_bits(src) / 8] |= 1 << ((8 - (ip_bits(dst) % 8)) % 8);
+
+	SET_INET_VARSIZE(dst);
+	return dst;
+}
+
+Datum
+network_subnet_first(PG_FUNCTION_ARGS)
+{
+	inet	   *src = PG_GETARG_INET_PP(0);
+
+	if(ip_bits(src) < ip_maxbits(src))
+		PG_RETURN_INET_P(network_subnet_internal(src, false));
+	PG_RETURN_NULL();
+}
+
+Datum
+network_subnet_last(PG_FUNCTION_ARGS)
+{
+	inet	   *src = PG_GETARG_INET_PP(0);
+
+	if(ip_bits(src) < ip_maxbits(src))
+		PG_RETURN_INET_P(network_subnet_internal(src, true));
+	PG_RETURN_NULL();
+}
+
+/*
  * Convert a value of a network datatype to an approximate scalar value.
  * This is used for estimating selectivities of inequality operators
  * involving network types.
