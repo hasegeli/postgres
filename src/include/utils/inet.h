@@ -115,10 +115,34 @@ typedef struct macaddr
 			(ip_family(inetptr) == PGSQL_AF_INET ? 4 : 16))
 
 /*
+ * Operator strategy numbers used in the GiST network opclass
+ */
+#define INETSTRAT_SUB			11
+#define INETSTRAT_SUBEQ			8
+#define INETSTRAT_OVERLAPS		3
+#define INETSTRAT_SUPEQ			7
+#define INETSTRAT_SUP			10
+#define INETSTRAT_LT			16
+#define INETSTRAT_LE			17
+#define INETSTRAT_EQ			18
+#define INETSTRAT_GE			19
+#define INETSTRAT_GT			20
+
+/*
  * Static functions in network.c
  */
 extern int		bitncmp(void *l, void *r, int n);
 extern int		bitncommon(unsigned char *l, unsigned char *r, int n);
 
+/*
+ * GiST support functions in network_gist.c
+ */
+extern Datum	inet_gist_consistent(PG_FUNCTION_ARGS);
+extern Datum	inet_gist_compress(PG_FUNCTION_ARGS);
+extern Datum	inet_gist_decompress(PG_FUNCTION_ARGS);
+extern Datum	inet_gist_union(PG_FUNCTION_ARGS);
+extern Datum	inet_gist_penalty(PG_FUNCTION_ARGS);
+extern Datum	inet_gist_picksplit(PG_FUNCTION_ARGS);
+extern Datum	inet_gist_same(PG_FUNCTION_ARGS);
 
 #endif   /* INET_H */
