@@ -118,5 +118,7 @@ typedef struct macaddr
  * Static functions in network.c
  */
 extern int		bitncmp(void *l, void *r, int n);
+extern int		bitncommon(unsigned char *l, unsigned char *r, int n);
+
 
 #endif   /* INET_H */
