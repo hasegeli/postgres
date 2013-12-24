@@ -82,4 +82,41 @@ typedef struct macaddr
 #define PG_GETARG_MACADDR_P(n) DatumGetMacaddrP(PG_GETARG_DATUM(n))
 #define PG_RETURN_MACADDR_P(x) return MacaddrPGetDatum(x)
 
+/*
+ * Access macros
+ *
+ * We use VARDATA_ANY so that we can process short-header varlena values
+ * without detoasting them. This requires a trick: VARDATA_ANY assumes
+ * the varlena header is already filled in, which is not the case when
+ * constructing a new value (until SET_INET_VARSIZE is called, which we
+ * typically can't do till the end). Therefore, we always initialize
+ * the newly-allocated value to zeroes (using palloc0). A zero length
+ * word look like the not-1-byte case to VARDATA_ANY,  and so we correctly
+ * construct an uncompressed value.
+ *
+ * Note that ip_maxbits() and SET_INET_VARSIZE() require the family
+ * field to be set correctly.
+ */
+
+#define ip_family(inetptr) \
+	(((inet_struct *) VARDATA_ANY(inetptr))->family)
+
+#define ip_bits(inetptr) \
+	(((inet_struct *) VARDATA_ANY(inetptr))->bits)
+
+#define ip_addr(inetptr) \
+	(((inet_struct *) VARDATA_ANY(inetptr))->ipaddr)
+
+#define ip_maxbits(inetptr) \
+	(ip_family(inetptr) == PGSQL_AF_INET ? 32 : 128)
+
+#define SET_INET_VARSIZE(inetptr) \
+	SET_VARSIZE(inetptr, VARHDRSZ + offsetof(inet_struct, ipaddr) + \
+			(ip_family(inetptr) == PGSQL_AF_INET ? 4 : 16))
+
+/*
+ * Static functions in network.c
+ */
+extern int		bitncmp(void *l, void *r, int n);
+
 #endif   /* INET_H */
