@@ -148,4 +148,18 @@ extern Datum	inet_gist_penalty(PG_FUNCTION_ARGS);
 extern Datum	inet_gist_picksplit(PG_FUNCTION_ARGS);
 extern Datum	inet_gist_same(PG_FUNCTION_ARGS);
 
+/*
+ * Selectivity estimation functions in network_selfuncs.c
+ */
+extern Datum  	network_overlap_selectivity(PG_FUNCTION_ARGS);
+extern Datum  	network_adjacent_selectivity(PG_FUNCTION_ARGS);
+
+/*
+ * Default selectivity for the overlap operator
+ *
+ * Defaults for other inet operators can be calculated relative to this
+ * value.
+ */
+#define DEFAULT_NETWORK_OVERLAP_SELECTIVITY	0.01
+
 #endif   /* INET_H */
