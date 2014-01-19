@@ -8428,7 +8428,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
        <row>
         <entry> <literal>&amp;&amp;</literal> </entry>
         <entry>overlaps</entry>
-        <entry><literal>inet '192.168.1/24' &amp;&amp; inet '192.168.1/24'</literal></entry>
+        <entry><literal>inet '192.168.1/24' &amp;&amp; inet '192.168.1.80/28'</literal></entry>
        </row>
        <row>
         <entry> <literal>~</literal> </entry>
