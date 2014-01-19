@@ -2117,7 +2117,6 @@ DATA(insert OID = 928 (  network_subeq		PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0
 DATA(insert OID = 929 (  network_sup		PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "869 869" _null_ _null_ _null_ _null_	network_sup _null_ _null_ _null_ ));
 DATA(insert OID = 930 (  network_supeq		PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "869 869" _null_ _null_ _null_ _null_	network_supeq _null_ _null_ _null_ ));
 DATA(insert OID = 4040 (  network_overlap	PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "869 869" _null_ _null_ _null_ _null_	network_overlap	_null_ _null_ _null_ ));
-DATA(insert OID = 4041 (  network_adjacent  PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "869 869" _null_ _null_ _null_ _null_	network_adjacent _null_ _null_ _null_ ));
 
 /*
  * GiST support for inet and cidr
