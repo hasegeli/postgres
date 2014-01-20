@@ -114,7 +114,7 @@ inetoverlapsel(PG_FUNCTION_ARGS)
  * the overlap operator. Is can be used as propotion for the sub network
  * and the sup network operators.
  *
- * Minimum bits of the constrant and elements of the histogram compared
+ * Minimum bits of the constant and elements of the histogram compared
  * with each other using the masklen. This would lead to big mistakes
  * for histograms with uneven masklen distribution. To avoid this problem
  * comparison with the left and right side of the buckets used together.
