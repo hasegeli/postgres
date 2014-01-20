@@ -194,23 +194,13 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 	addr = ip_addr(tmp);
 	match = 0.0;
 
+	left = NULL;
+	left_min_bits = 0;
+	left_order = 1; /* The first value should be greater. */
+
 	/* Iterate over the histogram buckets. Use i for the right side.*/
 	for (i = 0; i < nvalues; i++)
 	{
-		if (i == 0)
-		{
-			left = NULL;
-			left_min_bits = 0;
-			left_order = 1; /* The first value should be greater. */
-		}
-		else
-		{
-			/* Shift the variables. */
-			left = right;
-			left_min_bits = right_min_bits;
-			left_order = right_order;
-		}
-
 		right = DatumGetInetP(values[i]);
 		if (ip_family(right) == family)
 		{
@@ -258,6 +248,11 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 
 			match += 1.0 / pow(2, divider);
 		}
+
+		/* Shift the variables. */
+		left = right;
+		left_min_bits = right_min_bits;
+		left_order = right_order;
 	}
 
 	divider = nvalues - 1;
