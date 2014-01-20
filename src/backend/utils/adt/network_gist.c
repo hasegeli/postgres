@@ -556,7 +556,7 @@ inet_gist_same(PG_FUNCTION_ARGS)
 
 	*result = (ip_family(right) == ip_family(left) &&
 			   ip_bits(right) == ip_bits(left) &&
-			   bitncmp(ip_addr(left), ip_addr(right), ip_maxbits(left)) == 0);
+			   memcmp(ip_addr(left), ip_addr(right), ip_maxbytes(left)) == 0);
 
 	PG_RETURN_POINTER(result);
 }
