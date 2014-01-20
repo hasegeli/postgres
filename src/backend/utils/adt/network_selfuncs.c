@@ -26,13 +26,16 @@
 #include "utils/selfuncs.h"
 
 
-/*
- * Default selectivity for the overlap operator
- *
- * Defaults for other inet operators can be calculated relative to this
- * value.
- */
-#define DEFAULT_NETWORK_OVERLAP_SEL 0.01
+/* Default selectivity constant for the inet overlap operator */
+#define DEFAULT_OVERLAP_SEL 0.01
+
+/* Default selectivity constant for the other operators */
+#define DEFAULT_INCLUSION_SEL 0.005
+
+/* Default selectivity for given operator */
+#define DEFAULT_SEL(operator) \
+	((operator) == OID_INET_OVERLAP_OP ? \
+			DEFAULT_OVERLAP_SEL : DEFAULT_INCLUSION_SEL)
 
 static Selectivity inet_hist_overlap_selec(VariableStatData *vardata,
 										   Datum constvalue, double ndistinc);
@@ -63,7 +66,7 @@ inetoverlapsel(PG_FUNCTION_ARGS)
 	 */
 	if (!get_restriction_variable(root, args, varRelid,
 								  &vardata, &other, &varonleft))
-		PG_RETURN_FLOAT8(DEFAULT_NETWORK_OVERLAP_SEL);
+		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
 
 	/*
 	 * Can't do anything useful if the something is not a constant, either.
@@ -71,7 +74,7 @@ inetoverlapsel(PG_FUNCTION_ARGS)
 	if (!IsA(other, Const))
 	{
 		ReleaseVariableStats(vardata);
-		PG_RETURN_FLOAT8(DEFAULT_NETWORK_OVERLAP_SEL);
+		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
 	}
 
 	/* Overlap operator is strict. */
@@ -84,7 +87,7 @@ inetoverlapsel(PG_FUNCTION_ARGS)
 	if (!HeapTupleIsValid(vardata.statsTuple))
 	{
 		ReleaseVariableStats(vardata);
-		PG_RETURN_FLOAT8(DEFAULT_NETWORK_OVERLAP_SEL);
+		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
 	}
 
 	constvalue = ((Const *) other)->constvalue;
