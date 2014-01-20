@@ -151,7 +151,7 @@ extern Datum	inet_gist_same(PG_FUNCTION_ARGS);
 /*
  * Selectivity estimation function in network_selfuncs.c
  */
-extern Datum  	network_overlap_selectivity(PG_FUNCTION_ARGS);
+extern Datum  	inetoverlapsel(PG_FUNCTION_ARGS);
 
 /*
  * Default selectivity for the overlap operator
