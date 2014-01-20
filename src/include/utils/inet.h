@@ -94,8 +94,8 @@ typedef struct macaddr
  * word look like the not-1-byte case to VARDATA_ANY,  and so we correctly
  * construct an uncompressed value.
  *
- * Note that ip_maxbits() and SET_INET_VARSIZE() require the family
- * field to be set correctly.
+ * Note that ip_maxbits(), ip_maxbytes() and SET_INET_VARSIZE() require
+ * the family field to be set correctly.
  */
 
 #define ip_family(inetptr) \
@@ -110,9 +110,12 @@ typedef struct macaddr
 #define ip_maxbits(inetptr) \
 	(ip_family(inetptr) == PGSQL_AF_INET ? 32 : 128)
 
+#define ip_maxbytes(inetptr) \
+	(ip_family(inetptr) == PGSQL_AF_INET ? 4 : 16)
+
 #define SET_INET_VARSIZE(inetptr) \
 	SET_VARSIZE(inetptr, VARHDRSZ + offsetof(inet_struct, ipaddr) + \
-			(ip_family(inetptr) == PGSQL_AF_INET ? 4 : 16))
+						 ip_maxbytes(inetptr))
 
 /*
  * Operator strategy numbers used in the GiST network opclass
