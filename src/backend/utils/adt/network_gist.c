@@ -560,4 +560,3 @@ inet_gist_same(PG_FUNCTION_ARGS)
 
 	PG_RETURN_POINTER(result);
 }
-
