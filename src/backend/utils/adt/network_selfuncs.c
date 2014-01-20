@@ -268,4 +268,3 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 
 	return match / divider;
 }
-
