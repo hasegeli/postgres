@@ -108,33 +108,6 @@ network_overlap_selectivity(PG_FUNCTION_ARGS)
 }
 
 /*
- * Selectivity estimation for network adjacent operator
- */
-Datum
-network_adjacent_selectivity(PG_FUNCTION_ARGS)
-{
-	PlannerInfo	   *root = (PlannerInfo *) PG_GETARG_POINTER(0);
-	Oid				operator = PG_GETARG_OID(1);
-	List		   *args = (List *) PG_GETARG_POINTER(2);
-	int				varRelid = PG_GETARG_INT32(3);
-	Oid				negator;
-	Selectivity		selec;
-
-	negator = get_negator(operator);
-
-	if (negator)
-		selec = DatumGetFloat8(DirectFunctionCall4(network_overlap_selectivity,
-												   PointerGetDatum(root),
-												   ObjectIdGetDatum(negator),
-												   PointerGetDatum(args),
-												   Int32GetDatum(varRelid)));
-	else
-		elog(ERROR, "inet adjacent operator must have a negator");
-
-	PG_RETURN_FLOAT8(1.0 - selec);
-}
-
-/*
  * Inet histogram overlap selectivity estimation
  *
  * Calculates histogram overlap selectivity for inet datatypes.
