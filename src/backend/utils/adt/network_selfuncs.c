@@ -20,6 +20,7 @@
 #include <math.h>
 
 #include "access/htup_details.h"
+#include "catalog/pg_operator.h"
 #include "catalog/pg_statistic.h"
 #include "utils/lsyscache.h"
 #include "utils/inet.h"
@@ -37,11 +38,16 @@
 	((operator) == OID_INET_OVERLAP_OP ? \
 			DEFAULT_OVERLAP_SEL : DEFAULT_INCLUSION_SEL)
 
+static int inet_opr_order(Oid operator);
 static Selectivity inet_hist_overlap_selec(VariableStatData *vardata,
-										   Datum constvalue, double ndistinc);
+										   Datum constvalue, double ndistinc,
+										   int opr_order);
+static int inet_host_cmp(inet *left, inet *right, int opr_order);
+static int inet_masklen_cmp(inet *left, inet *right, int opr_order);
+static int inet_hist_match_divider(inet *hist, inet *query, int opr_order);
 
 /*
- * Selectivity estimation for network overlap operator
+ * Selectivity estimation for overlap operator
  */
 Datum
 inetoverlapsel(PG_FUNCTION_ARGS)
@@ -106,8 +112,10 @@ inetoverlapsel(PG_FUNCTION_ARGS)
 		PG_RETURN_FLOAT8(selec / (1.0 - hist_selec));
 	}
 
-	selec += hist_selec * inet_hist_overlap_selec(&vardata, constvalue,
-												  stats->stadistinct);
+	selec += hist_selec *
+			 inet_hist_overlap_selec(&vardata, constvalue, stats->stadistinct,
+									 (varonleft ? inet_opr_order(operator) :
+									  inet_opr_order(operator) * -1));
 
 	/* Result should be in range, but make sure... */
 	CLAMP_PROBABILITY(selec);
@@ -117,77 +125,94 @@ inetoverlapsel(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Practical comparable numbers for the subnet inclusion operators
+ */
+static int
+inet_opr_order(Oid operator)
+{
+	switch (operator)
+	{
+		case OID_INET_SUP_OP:
+			return -2;
+		case OID_INET_SUPEQ_OP:
+			return -1;
+		case OID_INET_OVERLAP_OP:
+			return 0;
+		case OID_INET_SUBEQ_OP:
+			return 1;
+		case OID_INET_SUB_OP:
+			return 2;
+	}
+
+	elog(ERROR, "unknown operator for inet selectivity");
+}
+
+/*
  * Inet histogram overlap selectivity estimation
  *
- * Calculates histogram overlap selectivity for inet datatypes.
- * The return value is between 0 and 1. It should be corrected with MVC
- * selectivity and null fraction. The selectivity is most suitable to
- * the overlap operator. Is can be used as propotion for the sub network
- * and the sup network operators.
+ * Calculates histogram selectivity for the subnet inclusion operators of
+ * the inet type. The return value is between 0 and 1. It should be
+ * corrected with MVC selectivity and null fraction.
  *
- * Minimum bits of the constant and elements of the histogram compared
- * with each other using the masklen. This would lead to big mistakes
- * for histograms with uneven masklen distribution. To avoid this problem
- * comparison with the left and right side of the buckets used together.
+ * The histogram is originally for the basic comparison operators. Only
+ * the common bits of the network part and the lenght of the network part
+ * (masklen) are appropriate for the subnet inclusion opeators. Fortunately,
+ * basic comparison fits in this situation. Even so, the lenght of the
+ * network part would not really be significant in the histogram. This would
+ * lead to big mistakes for data sets with uneven masklen distribution.
+ * To avoid this problem, comparison with the left and the right side of the
+ * buckets used together.
  *
- * Histogram bucket matches calculated in 3 forms. If the minimum bits
- * of the constant matches the both sides, bucket considered as fully
- * matched. If the constant matches only the right side, bucket does
- * not considered as matched at all. In that case, the ratio for only
- * 1 value in the column added to the selectivity.
+ * Histogram bucket matches calculated in 3 forms. If the constant matches
+ * the both sides, bucket considered as fully matched. If the constant
+ * matches only the right side, bucket does not considered as matched at all.
+ * In that case, the ratio for only 1 value in the column added to
+ * the selectivity.
  *
  * The ratio for only 1 value, calculated with the ndistinct variable,
- * if exists and greater than 0. 0 can be given to it if this behavior
- * does not desired. This ratio can be big enough not to disregard for
- * addresses with small masklen's. See pg_statistic for more information
+ * if greater than 0. 0 can be given to it if this behavior does not desired.
+ * This ratio can be big enough not to disregard for addresses with small
+ * masklen's. See pg_statistic for more information
  * about it.
  *
- * When the constant matches only the right side of the bucket, it will
- * match the next bucket, unless the bucket is the last one. If these
- * buckets would considered as matched, it would lead unfair multiple
- * matches for some constants.
+ * When the constant matches only the right side of the bucket, it will match
+ * the next bucket, unless the bucket is the last one. If these buckets would
+ * considered as matched, it would lead unfair multiple matches for some
+ * constants.
  *
  * The third form is to match the bucket partially. A divider calculated
- * by using the minimum bits and the common bits for the both sides,
- * used as power of two, in this case. It is a heuristic, geometrical
- * approch. Maximum value for the mimimum bits and the common bits for
- * the both side used to mimimize the mistake in the buckets which have
- * disperate masklen's.
+ * for one of the sides of the bucket, used as power of two, in this case.
+ * If the divider can be calculated for both of the sides, the greater one
+ * is choosen to mimimize the mistake in the buckets which have boundries
+ * with disperate lenghts of network parts.
  *
- * For partial match with the buckets which have different address
- * families on the left and right sides, only the minimum bits and
- * the common bits for the side which has same address family with
- * the constant, used. This can cause more mistake for these buckets
- * if their masklen's are not close to the average. It is only the case
- * for one bucket, if there are addresses with different families on
- * the column. It seems as a better option than not considering these
- * buckets.
+ * For partial match with the buckets which have different address families
+ * on the left and right sides, only the boundry with the same address
+ * family, taken into consideration. This can cause more mistake for these
+ * buckets if their masklen's are also disperate. It can only be the case for
+ * one bucket, if there are addresses with different families on the column.
+ * It seems as a better option than not considering these buckets.
  *
- * If the constant is less than the first element or greater than
- * the last element of the histogram or if the histogram does not available,
+ * If the constant is less than the first element or greater than the last
+ * element of the histogram or if the histogram does not available,
  * the return value will be 0.
  */
 static Selectivity
 inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
-						double ndistinct)
+						double ndistinct, int opr_order)
 {
-	float			match,
-					divider;
+	float			total_match,
+					total_divider;
 	Datum		   *values;
 	int				nvalues,
 					i,
-					left_min_bits,
 					left_order,
-					left_common_bits,
-					right_min_bits,
+					left_divider,
 					right_order,
-					right_common_bits,
-					family,
-					bits;
-	unsigned char  *addr;
-	inet		   *tmp,
-				   *right,
-				   *left;
+					right_divider;
+	inet		   *query,
+				   *left,
+				   *right;
 
 	if (!(HeapTupleIsValid(vardata->statsTuple) &&
 		  get_attstatsslot(vardata->statsTuple,
@@ -198,84 +223,161 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 						   NULL, NULL)))
 		return 0.0;
 
-	/* Initilize variables using the constant. */
-	tmp = DatumGetInetP(constvalue);
-	family = ip_family(tmp);
-	bits = ip_bits(tmp);
-	addr = ip_addr(tmp);
-	match = 0.0;
+	total_match = 0.0;
+	query = DatumGetInetP(constvalue);
 
 	left = NULL;
-	left_min_bits = 0;
 	left_order = 1; /* The first value should be greater. */
 
 	/* Iterate over the histogram buckets. Use i for the right side. */
 	for (i = 0; i < nvalues; i++)
 	{
 		right = DatumGetInetP(values[i]);
-		if (ip_family(right) == family)
-		{
-			right_min_bits = Min(ip_bits(right), bits);
-			if (right_min_bits == 0)
-				right_order = 0;
-			else
-				right_order = bitncmp(ip_addr(right), addr, right_min_bits);
-		}
-		else if (ip_family(right) > family)
-			right_order = 1;
-		else
-			right_order = -1;
+		right_order = inet_host_cmp(right, query, opr_order);
 
 		if (right_order == 0)
 		{
 			if (left_order == 0)
 				/* Full bucket match. */
-				match += 1.0;
+				total_match += 1.0;
 			else
 				/* Only right side match. */
 				if (ndistinct > 0)
-					match += 1.0 / ndistinct;
+					total_match += 1.0 / ndistinct;
 		}
 		else if (((right_order > 0 && left_order <= 0) ||
 				  (right_order < 0 && left_order >= 0)) && left)
 		{
-			/* Partial bucket match. */
+			left_divider = inet_hist_match_divider(left, query, opr_order);
+			right_divider = inet_hist_match_divider(right, query, opr_order);
 
-			if (left_min_bits == 0 || ip_family(left) != family)
-				left_common_bits = 0;
-			else
-				left_common_bits = bitncommon(ip_addr(left), addr,
-											  left_min_bits);
-
-			if (right_min_bits == 0 || ip_family(left) != family)
-				right_common_bits = 0;
-			else
-				right_common_bits = bitncommon(ip_addr(right), addr,
-											   right_min_bits);
-
-			/* Min_bits cannot be less than common_bits in any case. */
-			divider = Max(left_min_bits, right_min_bits) -
-					  Max(left_common_bits, right_common_bits);
-
-			match += 1.0 / pow(2, divider);
+			if (left_divider >= 0 || right_divider >= 0)
+				/* Partial bucket match. */
+				total_match += 1.0 / pow(2, Max(left_divider, right_divider));
 		}
 
 		/* Shift the variables. */
 		left = right;
-		left_min_bits = right_min_bits;
 		left_order = right_order;
 	}
 
-	divider = nvalues - 1;
+	total_divider = nvalues - 1;
 	if (ndistinct > 0)
 		/* Add this in case the constant matches the first element. */
-		divider += 1.0 / ndistinct;
+		total_divider += 1.0 / ndistinct;
 
-	elog(DEBUG1, "inet histogram overlap matches: %f / %f", match, divider);
+	elog(DEBUG1, "inet histogram overlap matches: %f / %f", total_match,
+															total_divider);
 
 	free_attstatsslot(vardata->atttype, values, nvalues, NULL, 0);
 
-	Assert(match <= divider);
+	Assert(total_match <= total_divider);
 
-	return match / divider;
+	return total_match / total_divider;
+}
+
+/*
+ * Comparison function for the subnet inclusion operators
+ *
+ * Comparison is compatible with the basic comparison function for the inet
+ * type. See network_cmp_internal on network.c for the original. Basic
+ * comparison operators are implemented with the network_cmp_internal
+ * function. It is possible to implement the subnet inclusion operators with
+ * this function.
+ *
+ * Comparison is first on the common bits of the network part, then on
+ * the length of the network part (masklen) as the network_cmp_internal
+ * function. Only the first part is on this function. The second part is
+ * seperated to another function for reusability. The difference between
+ * the second part and the original network_cmp_internal is that the operator
+ * is used while comparing the lengths of the network parts. See the second
+ * part on the inet_masklen_cmp function below.
+ */
+static int
+inet_host_cmp(inet *left, inet *right, int opr_order)
+{
+	if (ip_family(left) == ip_family(right))
+	{
+		int		 order;
+
+		order = bitncmp(ip_addr(left), ip_addr(right),
+						Min(ip_bits(left), ip_bits(right)));
+
+		if (order != 0)
+			return order;
+
+		return inet_masklen_cmp(left, right, opr_order);
+	}
+
+	return ip_family(left) - ip_family(right);
+}
+
+/*
+ * Masklen comparison function for the subnet inclusion operators
+ *
+ * Compares the lengths of network parts of the inputs using the operator.
+ * If the comparision is okay for the operator the return value will be 0.
+ * Otherwise the return value will be less than or greater than 0 with
+ * respect to the operator.
+ */
+static int
+inet_masklen_cmp(inet *left, inet *right, int opr_order)
+{
+	if (ip_family(left) == ip_family(right))
+	{
+		int		 order;
+
+		order = ip_bits(left) - ip_bits(right);
+
+		if ((order > 0 && opr_order >= 0) ||
+			(order == 0 && opr_order >= -1 && opr_order <= 1) ||
+			(order < 0 && opr_order <= 0))
+			return 0;
+
+		return opr_order;
+	}
+
+	return ip_family(left) - ip_family(right);
+}
+
+/*
+ * Inet histogram partial match divider calculation
+ *
+ * First, the families and the lenghts of the network parts are compared
+ * using the subnet inclusion operator. If they are not -1 returned which
+ * means divider not available.
+ *
+ * The divider is imagined as the distance between the decisive bits and
+ * the common bits of the addresses with heuristic, geometrical thinking.
+ * It is an empirical formula and subject to change with more experiment.
+ */
+static int
+inet_hist_match_divider(inet *hist, inet *query, int opr_order)
+{
+	if (inet_masklen_cmp(hist, query, opr_order) == 0)
+	{
+		int		min_bits,
+				decisive_bits;
+
+		min_bits = Min(ip_bits(hist), ip_bits(query));
+
+		/*
+		 * Set the decisive bits from the one which should contain the other
+		 * according to the operator.
+		 */
+		if (opr_order < 0)
+			decisive_bits = ip_bits(hist);
+		else if (opr_order > 0)
+			decisive_bits = ip_bits(query);
+		else
+			decisive_bits = min_bits;
+
+		if (min_bits > 0)
+			return decisive_bits - bitncommon(ip_addr(hist), ip_addr(query),
+											  min_bits);
+
+		return decisive_bits;
+	}
+
+	return -1;
 }
