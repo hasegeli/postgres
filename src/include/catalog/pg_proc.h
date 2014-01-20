@@ -2137,7 +2137,7 @@ DATA(insert OID = 4048 (  inet_gist_same		PGNSP PGUID 12 1 0 0 0 f f f f t f i 3
 DESCR("GiST support");
 
 /* Selectivity estimation for inet and cidr operators */
-DATA(insert OID = 4052 (  network_overlap_selectivity	PGNSP PGUID 12 1 0 0 0 f f f f t f s 4 0 701 "2281 26 2281 23" _null_ _null_ _null_ _null_ network_overlap_selectivity _null_ _null_ _null_ ));
+DATA(insert OID = 4052 (  inetoverlapsel	PGNSP PGUID 12 1 0 0 0 f f f f t f s 4 0 701 "2281 26 2281 23" _null_ _null_ _null_ _null_ inetoverlapsel _null_ _null_ _null_ ));
 
 /* inet/cidr functions */
 DATA(insert OID = 598 (  abbrev				PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 25 "869" _null_ _null_ _null_ _null_	inet_abbrev _null_ _null_ _null_ ));

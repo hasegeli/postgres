@@ -26,15 +26,14 @@
 #include "utils/selfuncs.h"
 
 
-static Selectivity inet_hist_overlap_selectivity(VariableStatData *vardata,
-												 Datum constvalue,
-												 double ndistinc);
+static Selectivity inet_hist_overlap_selec(VariableStatData *vardata,
+										   Datum constvalue, double ndistinc);
 
 /*
  * Selectivity estimation for network overlap operator
  */
 Datum
-network_overlap_selectivity(PG_FUNCTION_ARGS)
+inetoverlapsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo	   *root = (PlannerInfo *) PG_GETARG_POINTER(0);
 	Oid				operator = PG_GETARG_OID(1);
@@ -96,9 +95,8 @@ network_overlap_selectivity(PG_FUNCTION_ARGS)
 		PG_RETURN_FLOAT8(selec / (1.0 - hist_selec));
 	}
 
-	selec += hist_selec * inet_hist_overlap_selectivity(&vardata,
-														constvalue,
-														stats->stadistinct);
+	selec += hist_selec * inet_hist_overlap_selec(&vardata, constvalue,
+												  stats->stadistinct);
 
 	/* Result should be in range, but make sure... */
 	CLAMP_PROBABILITY(selec);
@@ -159,9 +157,8 @@ network_overlap_selectivity(PG_FUNCTION_ARGS)
  * the return value will be 0.
  */
 static Selectivity
-inet_hist_overlap_selectivity(VariableStatData *vardata,
-							  Datum constvalue,
-							  double ndistinct)
+inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
+						double ndistinct)
 {
 	float			match,
 					divider;
