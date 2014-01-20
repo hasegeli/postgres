@@ -250,7 +250,8 @@ inet_gist_union(PG_FUNCTION_ARGS)
 	int				family,
 					bits;
 	unsigned char  *addr;
-	inet		   *tmp;
+	inet		   *tmp,
+				   *result;
 	OffsetNumber 	i,
 					numranges = entryvec->n;
 
@@ -283,23 +284,23 @@ inet_gist_union(PG_FUNCTION_ARGS)
 	}
 
 	/* Make sure any unused bits are zeroed. */
-	tmp = (inet *) palloc0(sizeof(inet));
+	result = (inet *) palloc0(sizeof(inet));
 
 	/* Initilize the union as inet. */
-	ip_family(tmp) = family;
-	ip_bits(tmp) = bits;
+	ip_family(result) = family;
+	ip_bits(result) = bits;
 
 	/* Clone maximum bytes of the address. */
 	if (bits != 0)
-		memcpy(ip_addr(tmp), addr, (bits + 7) / 8);
+		memcpy(ip_addr(result), addr, (bits + 7) / 8);
 
 	/* Clean the partial byte. */
 	if (bits % 8 != 0)
-		ip_addr(tmp)[bits / 8] &= ~(0xFF >> (bits % 8));
+		ip_addr(result)[bits / 8] &= ~(0xFF >> (bits % 8));
 
-	SET_INET_VARSIZE(tmp);
+	SET_INET_VARSIZE(result);
 
-	PG_RETURN_INET_P(tmp);
+	PG_RETURN_INET_P(result);
 }
 
 /*
