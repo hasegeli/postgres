@@ -206,7 +206,7 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 	left_min_bits = 0;
 	left_order = 1; /* The first value should be greater. */
 
-	/* Iterate over the histogram buckets. Use i for the right side.*/
+	/* Iterate over the histogram buckets. Use i for the right side. */
 	for (i = 0; i < nvalues; i++)
 	{
 		right = DatumGetInetP(values[i]);
@@ -231,7 +231,7 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 			else
 				/* Only right side match. */
 				if (ndistinct > 0)
-					match += 1.0 > ndistinct;
+					match += 1.0 / ndistinct;
 		}
 		else if (((right_order > 0 && left_order <= 0) ||
 				  (right_order < 0 && left_order >= 0)) && left)
