@@ -138,6 +138,11 @@ extern int		bitncmp(void *l, void *r, int n);
 extern int		bitncommon(unsigned char *l, unsigned char *r, int n);
 
 /*
+ * Selectivity estimation function in network_selfuncs.c
+ */
+extern Datum  	inetoverlapsel(PG_FUNCTION_ARGS);
+
+/*
  * GiST support functions in network_gist.c
  */
 extern Datum	inet_gist_consistent(PG_FUNCTION_ARGS);
@@ -147,11 +152,6 @@ extern Datum	inet_gist_union(PG_FUNCTION_ARGS);
 extern Datum	inet_gist_penalty(PG_FUNCTION_ARGS);
 extern Datum	inet_gist_picksplit(PG_FUNCTION_ARGS);
 extern Datum	inet_gist_same(PG_FUNCTION_ARGS);
-
-/*
- * Selectivity estimation function in network_selfuncs.c
- */
-extern Datum  	inetoverlapsel(PG_FUNCTION_ARGS);
 
 /*
  * Default selectivity for the overlap operator
