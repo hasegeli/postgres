@@ -237,9 +237,10 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
  * The GiST union function
  *
  * The union of the networks is the network which contain all of them.
- * The main question to calculate the union is that they have how many
- * bits in common. After calculating the common bits, address of any of
- * them can be used as the union by discarding the host bits.
+ * The important part of calculating the union is to find that how many
+ * bits they have in common on the network part of their addresses.
+ * After finding the common bits, address of any of them can be used as
+ * the union by discarding the host bits.
  */
 Datum
 inet_gist_union(PG_FUNCTION_ARGS)
@@ -326,9 +327,8 @@ inet_gist_decompress(PG_FUNCTION_ARGS)
 /*
  * The GiST page split penalty function
  *
- * Penalty is reverse of the common IP bits of the two addresses.
- * Values bigger than 1 are used when the common IP bits cannot
- * calculated.
+ * Penalty is inverse of the common IP bits of the two addresses. Values
+ * bigger than 1 are used when the common bits cannot be calculated.
  */
 Datum
 inet_gist_penalty(PG_FUNCTION_ARGS)
@@ -372,12 +372,12 @@ inet_gist_penalty(PG_FUNCTION_ARGS)
  * Only the root should contain addresses from different families, so only
  * the root should be split this way.
  *
- * The second and the important way is to split by the union of the keys.
- * Union of the keys calculated same way with the inet_gist_union function.
- * The first and the last biggest subnets created from the calculated
- * union. In this case addresses contained by the first subnet will be put
- * to the left bucket, address contained by the last subnet will be put to
- * the right bucket.
+ * The second and the regular way is to split by the network part of the
+ * keys. To achieve this, the union of the keys calculated with the method
+ * on the inet_gist_union function. The first and the last biggest subnets
+ * created from the calculated union. Keys contained by the first subnet put
+ * to the left bucket, keys contained by the last subnet put to the right
+ * bucket.
  */
 Datum
 inet_gist_picksplit(PG_FUNCTION_ARGS)
