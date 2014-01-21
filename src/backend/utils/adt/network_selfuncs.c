@@ -39,18 +39,19 @@
 			DEFAULT_OVERLAP_SEL : DEFAULT_INCLUSION_SEL)
 
 static int inet_opr_order(Oid operator);
-static Selectivity inet_hist_overlap_selec(VariableStatData *vardata,
-										   Datum constvalue, double ndistinc,
-										   int opr_order);
-static int inet_host_cmp(inet *left, inet *right, int opr_order);
-static int inet_masklen_cmp(inet *left, inet *right, int opr_order);
+static Selectivity inet_hist_inclusion_selec(VariableStatData *vardata,
+											 Datum constvalue,
+											 double ndistinc,
+											 int opr_order);
+static int inet_inclusion_cmp(inet *left, inet *right, int opr_order);
+static int inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order);
 static int inet_hist_match_divider(inet *hist, inet *query, int opr_order);
 
 /*
- * Selectivity estimation for overlap operator
+ * Selectivity estimation for the subnet inclusion operators
  */
 Datum
-inetoverlapsel(PG_FUNCTION_ARGS)
+inetinclusionsel(PG_FUNCTION_ARGS)
 {
 	PlannerInfo	   *root = (PlannerInfo *) PG_GETARG_POINTER(0);
 	Oid				operator = PG_GETARG_OID(1);
@@ -83,7 +84,7 @@ inetoverlapsel(PG_FUNCTION_ARGS)
 		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
 	}
 
-	/* Overlap operator is strict. */
+	/* All of the subnet inclusion operators are strict. */
 	if (((Const *) other)->constisnull)
 	{
 		ReleaseVariableStats(vardata);
@@ -113,9 +114,10 @@ inetoverlapsel(PG_FUNCTION_ARGS)
 	}
 
 	selec += hist_selec *
-			 inet_hist_overlap_selec(&vardata, constvalue, stats->stadistinct,
-									 (varonleft ? inet_opr_order(operator) :
-									  inet_opr_order(operator) * -1));
+			 inet_hist_inclusion_selec(&vardata, constvalue,
+			 						   stats->stadistinct,
+									   (varonleft ? inet_opr_order(operator) :
+										inet_opr_order(operator) * -1));
 
 	/* Result should be in range, but make sure... */
 	CLAMP_PROBABILITY(selec);
@@ -144,11 +146,11 @@ inet_opr_order(Oid operator)
 			return 2;
 	}
 
-	elog(ERROR, "unknown operator for inet selectivity");
+	elog(ERROR, "unknown operator for inet inclusion selectivity");
 }
 
 /*
- * Inet histogram overlap selectivity estimation
+ * Inet histogram inclusion selectivity estimation
  *
  * Calculates histogram selectivity for the subnet inclusion operators of
  * the inet type. The return value is between 0 and 1. It should be
@@ -198,8 +200,8 @@ inet_opr_order(Oid operator)
  * the return value will be 0.
  */
 static Selectivity
-inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
-						double ndistinct, int opr_order)
+inet_hist_inclusion_selec(VariableStatData *vardata, Datum constvalue,
+						  double ndistinct, int opr_order)
 {
 	float			total_match,
 					total_divider;
@@ -233,7 +235,7 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 	for (i = 0; i < nvalues; i++)
 	{
 		right = DatumGetInetP(values[i]);
-		right_order = inet_host_cmp(right, query, opr_order);
+		right_order = inet_inclusion_cmp(right, query, opr_order);
 
 		if (right_order == 0)
 		{
@@ -266,8 +268,8 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
 		/* Add this in case the constant matches the first element. */
 		total_divider += 1.0 / ndistinct;
 
-	elog(DEBUG1, "inet histogram overlap matches: %f / %f", total_match,
-															total_divider);
+	elog(DEBUG1, "inet histogram inclusion matches: %f / %f", total_match,
+															  total_divider);
 
 	free_attstatsslot(vardata->atttype, values, nvalues, NULL, 0);
 
@@ -291,10 +293,10 @@ inet_hist_overlap_selec(VariableStatData *vardata, Datum constvalue,
  * seperated to another function for reusability. The difference between
  * the second part and the original network_cmp_internal is that the operator
  * is used while comparing the lengths of the network parts. See the second
- * part on the inet_masklen_cmp function below.
+ * part on the inet_masklen_inclusion_cmp function below.
  */
 static int
-inet_host_cmp(inet *left, inet *right, int opr_order)
+inet_inclusion_cmp(inet *left, inet *right, int opr_order)
 {
 	if (ip_family(left) == ip_family(right))
 	{
@@ -306,7 +308,7 @@ inet_host_cmp(inet *left, inet *right, int opr_order)
 		if (order != 0)
 			return order;
 
-		return inet_masklen_cmp(left, right, opr_order);
+		return inet_masklen_inclusion_cmp(left, right, opr_order);
 	}
 
 	return ip_family(left) - ip_family(right);
@@ -321,7 +323,7 @@ inet_host_cmp(inet *left, inet *right, int opr_order)
  * respect to the operator.
  */
 static int
-inet_masklen_cmp(inet *left, inet *right, int opr_order)
+inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order)
 {
 	if (ip_family(left) == ip_family(right))
 	{
@@ -354,7 +356,7 @@ inet_masklen_cmp(inet *left, inet *right, int opr_order)
 static int
 inet_hist_match_divider(inet *hist, inet *query, int opr_order)
 {
-	if (inet_masklen_cmp(hist, query, opr_order) == 0)
+	if (inet_masklen_inclusion_cmp(hist, query, opr_order) == 0)
 	{
 		int		min_bits,
 				decisive_bits;

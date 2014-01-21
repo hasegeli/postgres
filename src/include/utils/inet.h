@@ -140,7 +140,7 @@ extern int		bitncommon(unsigned char *l, unsigned char *r, int n);
 /*
  * Selectivity estimation function in network_selfuncs.c
  */
-extern Datum  	inetoverlapsel(PG_FUNCTION_ARGS);
+extern Datum  	inetinclusionsel(PG_FUNCTION_ARGS);
 
 /*
  * GiST support functions in network_gist.c
