@@ -39,10 +39,10 @@
 			DEFAULT_OVERLAP_SEL : DEFAULT_INCLUSION_SEL)
 
 static int inet_opr_order(Oid operator);
-static Selectivity inet_hist_inclusion_selec(VariableStatData *vardata,
-											 Datum constvalue,
-											 double ndistinc,
-											 int opr_order);
+static Selectivity inet_hist_inclusion_selectivity(VariableStatData *vardata,
+												   Datum constvalue,
+												   double ndistinc,
+												   int opr_order);
 static int inet_inclusion_cmp(inet *left, inet *right, int opr_order);
 static int inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order);
 static int inet_hist_match_divider(inet *hist, inet *query, int opr_order);
@@ -61,7 +61,9 @@ inetinclusionsel(PG_FUNCTION_ARGS)
 	Node		   *other;
 	bool			varonleft;
 	Selectivity		selec,
+					max_mcv_selec,
 					mcv_selec,
+					max_hist_selec,
 					hist_selec;
 	Datum			constvalue;
 	Form_pg_statistic stats;
@@ -101,23 +103,39 @@ inetinclusionsel(PG_FUNCTION_ARGS)
 	stats = (Form_pg_statistic) GETSTRUCT(vardata.statsTuple);
 
 	fmgr_info(get_opcode(operator), &proc);
-	selec = mcv_selectivity(&vardata, &proc, constvalue, varonleft,
-							&mcv_selec);
+	mcv_selec = mcv_selectivity(&vardata, &proc, constvalue, varonleft,
+								&max_mcv_selec);
 
-	hist_selec = 1.0 - stats->stanullfrac - mcv_selec;
+	max_hist_selec = 1.0 - stats->stanullfrac - max_mcv_selec;
 
 	/* If current selectivity is good enough, just correct and return it. */
-	if (hist_selec / mcv_selec < selec)
+	if (max_hist_selec / max_mcv_selec < mcv_selec)
 	{
 		ReleaseVariableStats(vardata);
-		PG_RETURN_FLOAT8(selec / (1.0 - hist_selec));
+		PG_RETURN_FLOAT8(mcv_selec / (1.0 - max_hist_selec));
 	}
 
-	selec += hist_selec *
-			 inet_hist_inclusion_selec(&vardata, constvalue,
-			 						   stats->stadistinct,
-									   (varonleft ? inet_opr_order(operator) :
-										inet_opr_order(operator) * -1));
+	hist_selec = inet_hist_inclusion_selectivity(&vardata, constvalue,
+					stats->stadistinct, (varonleft ? inet_opr_order(operator) :
+										 inet_opr_order(operator) * -1));
+
+	/*
+	 * If histogram selectivity is not exist but MCV selectivity exists,
+	 * correct and return it. If they both not exist return the default.
+	 */
+	if (hist_selec < 0)
+	{
+		if (max_mcv_selec > 0)
+		{
+			ReleaseVariableStats(vardata);
+			PG_RETURN_FLOAT8(mcv_selec / (1.0 - max_hist_selec));
+		}
+
+		ReleaseVariableStats(vardata);
+		PG_RETURN_FLOAT8(DEFAULT_SEL(operator));
+	}
+
+	selec = mcv_selec + max_hist_selec * hist_selec;
 
 	/* Result should be in range, but make sure... */
 	CLAMP_PROBABILITY(selec);
@@ -153,8 +171,11 @@ inet_opr_order(Oid operator)
  * Inet histogram inclusion selectivity estimation
  *
  * Calculates histogram selectivity for the subnet inclusion operators of
- * the inet type. The return value is between 0 and 1. It should be
- * corrected with MVC selectivity and null fraction.
+ * the inet type. In the normal case, the return value is between 0 and 1.
+ * It should be corrected with MVC selectivity and null fraction. If
+ * the constant is less than the first element or greater than the last
+ * element of the histogram the return value will be 0. If the histogram
+ * does not available, the return value will be -1.
  *
  * The histogram is originally for the basic comparison operators. Only
  * the common bits of the network part and the lenght of the network part
@@ -200,8 +221,8 @@ inet_opr_order(Oid operator)
  * the return value will be 0.
  */
 static Selectivity
-inet_hist_inclusion_selec(VariableStatData *vardata, Datum constvalue,
-						  double ndistinct, int opr_order)
+inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
+								double ndistinct, int opr_order)
 {
 	float			total_match,
 					total_divider;
@@ -223,7 +244,7 @@ inet_hist_inclusion_selec(VariableStatData *vardata, Datum constvalue,
 						   NULL,
 						   &values, &nvalues,
 						   NULL, NULL)))
-		return 0.0;
+		return -1;
 
 	total_match = 0.0;
 	query = DatumGetInetP(constvalue);
