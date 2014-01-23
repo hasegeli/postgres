@@ -45,7 +45,7 @@ static Selectivity inet_hist_inclusion_selectivity(VariableStatData *vardata,
 												   int opr_order);
 static int inet_inclusion_cmp(inet *left, inet *right, int opr_order);
 static int inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order);
-static int inet_hist_match_divider(inet *hist, inet *query, int opr_order);
+static double inet_hist_match_divider(inet *hist, inet *query, int opr_order);
 
 /*
  * Selectivity estimation for the subnet inclusion operators
@@ -195,47 +195,44 @@ inet_opr_order(Oid operator)
  * The ratio for only 1 value, calculated with the ndistinct variable,
  * if greater than 0. 0 can be given to it if this behavior does not desired.
  * This ratio can be big enough not to disregard for addresses with small
- * masklen's. See pg_statistic for more information
- * about it.
+ * masklen's. See pg_statistic for more information about it.
  *
  * When the constant matches only the right side of the bucket, it will match
  * the next bucket, unless the bucket is the last one. If these buckets would
  * considered as matched, it would lead unfair multiple matches for some
  * constants.
  *
- * The third form is to match the bucket partially. A divider calculated
- * for one of the sides of the bucket, used as power of two, in this case.
- * If the divider can be calculated for both of the sides, the greater one
- * is choosen to mimimize the mistake in the buckets which have boundries
- * with disperate lenghts of network parts.
+ * The third form is to match the bucket partially. Two dividers for both
+ * of the boundries tried to be calculated, in this case. If the address
+ * family of the boundry does not match the constant or comparison of
+ * the lenght of the network parts does not true by the operator, the divider
+ * for the boundry would not taken into account. If both of the dividers
+ * can be calculated, some kind of geometrical mean will be used.
  *
  * For partial match with the buckets which have different address families
  * on the left and right sides, only the boundry with the same address
  * family, taken into consideration. This can cause more mistake for these
- * buckets if their masklen's are also disperate. It can only be the case for
- * one bucket, if there are addresses with different families on the column.
- * It seems as a better option than not considering these buckets.
- *
- * If the constant is less than the first element or greater than the last
- * element of the histogram or if the histogram does not available,
- * the return value will be 0.
+ * buckets if their masklen's of their boundries are also disperate. It can
+ * only be the case for one bucket, if there are addresses with different
+ * families on the column. It seems as a better option than not considering
+ * these buckets.
  */
 static Selectivity
 inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
 								double ndistinct, int opr_order)
 {
-	float			total_match,
-					total_divider;
 	Datum		   *values;
-	int				nvalues,
-					i,
-					left_order,
-					left_divider,
-					right_order,
-					right_divider;
 	inet		   *query,
 				   *left,
 				   *right;
+	int				nvalues,
+					left_order,
+					right_order,
+					i;
+	double			match,
+					divider,
+					left_divider,
+					right_divider;
 
 	if (!(HeapTupleIsValid(vardata->statsTuple) &&
 		  get_attstatsslot(vardata->statsTuple,
@@ -246,11 +243,10 @@ inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
 						   NULL, NULL)))
 		return -1;
 
-	total_match = 0.0;
 	query = DatumGetInetP(constvalue);
-
 	left = NULL;
-	left_order = 1; /* The first value should be greater. */
+	left_order = -255; /* The first value should be greater. */
+	match = 0.0;
 
 	/* Iterate over the histogram buckets. Use i for the right side. */
 	for (i = 0; i < nvalues; i++)
@@ -262,11 +258,11 @@ inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
 		{
 			if (left_order == 0)
 				/* Full bucket match. */
-				total_match += 1.0;
+				match += 1.0;
 			else
 				/* Only right side match. */
 				if (ndistinct > 0)
-					total_match += 1.0 / ndistinct;
+					match += 1.0 / ndistinct;
 		}
 		else if (((right_order > 0 && left_order <= 0) ||
 				  (right_order < 0 && left_order >= 0)) && left)
@@ -274,9 +270,23 @@ inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
 			left_divider = inet_hist_match_divider(left, query, opr_order);
 			right_divider = inet_hist_match_divider(right, query, opr_order);
 
-			if (left_divider >= 0 || right_divider >= 0)
+			/* right_divider cannot be 0 because right_order is not. */
+			if (left_divider >= 0 || right_divider > 0)
+			{
 				/* Partial bucket match. */
-				total_match += 1.0 / pow(2, Max(left_divider, right_divider));
+
+				if (left_divider > 0)
+					if (right_divider > 0)
+						divider = 2.0 * (left_divider * right_divider) /
+										(left_divider + right_divider);
+					else
+						divider = left_divider;
+
+				else
+					divider = right_divider;
+
+				match += 1.0 / divider;
+			}
 		}
 
 		/* Shift the variables. */
@@ -284,19 +294,18 @@ inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
 		left_order = right_order;
 	}
 
-	total_divider = nvalues - 1;
+	divider = nvalues - 1;
 	if (ndistinct > 0)
 		/* Add this in case the constant matches the first element. */
-		total_divider += 1.0 / ndistinct;
+		divider += 1.0 / ndistinct;
 
-	elog(DEBUG1, "inet histogram inclusion matches: %f / %f", total_match,
-															  total_divider);
+	elog(DEBUG1, "inet histogram inclusion matches: %f / %f", match, divider);
 
 	free_attstatsslot(vardata->atttype, values, nvalues, NULL, 0);
 
-	Assert(total_match <= total_divider);
+	Assert(match <= divider);
 
-	return total_match / total_divider;
+	return match / divider;
 }
 
 /*
@@ -371,10 +380,11 @@ inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order)
  * means divider not available.
  *
  * The divider is imagined as the distance between the decisive bits and
- * the common bits of the addresses with heuristic, geometrical thinking.
- * It is an empirical formula and subject to change with more experiment.
+ * the common bits of the addresses. The divider will be used as power of two
+ * as it is the natural scale for the IP network inclusion. It is
+ * an empirical formula and subject to change with more experiment.
  */
-static int
+static double
 inet_hist_match_divider(inet *hist, inet *query, int opr_order)
 {
 	if (inet_masklen_inclusion_cmp(hist, query, opr_order) == 0)
@@ -396,10 +406,10 @@ inet_hist_match_divider(inet *hist, inet *query, int opr_order)
 			decisive_bits = min_bits;
 
 		if (min_bits > 0)
-			return decisive_bits - bitncommon(ip_addr(hist), ip_addr(query),
-											  min_bits);
+			decisive_bits -= bitncommon(ip_addr(hist), ip_addr(query),
+										min_bits);
 
-		return decisive_bits;
+		return pow(2, decisive_bits);
 	}
 
 	return -1;
