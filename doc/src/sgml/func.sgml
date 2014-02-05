@@ -8356,10 +8356,9 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
   <para>
    <xref linkend="cidr-inet-operators-table"> shows the operators
    available for the <type>cidr</type> and <type>inet</type> types.
-   The operators <literal>&lt;&lt;</literal>,
-   <literal>&lt;&lt;=</literal>, <literal>&gt;&gt;</literal>,
-   <literal>&gt;&gt;=</literal> and <literal>&amp;&amp;</literal>
-   test for subnet inclusion.  They
+   The operators <literal>&lt;@</literal>, <literal>&lt;@=</literal>,
+   <literal>@&gt;</literal>, <literal>@&gt;=</literal> and
+   <literal>&amp;&amp;</literal> test for subnet inclusion.  They
    consider only the network parts of the two addresses (ignoring any
    host part) and determine whether one network is identical to
    or a subnet of the other.
@@ -8407,24 +8406,24 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         <entry><literal>inet '192.168.1.5' &lt;&gt; inet '192.168.1.4'</literal></entry>
        </row>
        <row>
-        <entry> <literal>&lt;&lt;</literal> </entry>
+        <entry> <literal>&lt;@</literal> </entry>
         <entry>is contained within</entry>
-        <entry><literal>inet '192.168.1.5' &lt;&lt; inet '192.168.1/24'</literal></entry>
+        <entry><literal>inet '192.168.1.5' &lt;@ inet '192.168.1/24'</literal></entry>
        </row>
        <row>
-        <entry> <literal>&lt;&lt;=</literal> </entry>
+        <entry> <literal>&lt;@=</literal> </entry>
         <entry>is contained within or equals</entry>
-        <entry><literal>inet '192.168.1/24' &lt;&lt;= inet '192.168.1/24'</literal></entry>
+        <entry><literal>inet '192.168.1/24' &lt;@= inet '192.168.1/24'</literal></entry>
        </row>
        <row>
-        <entry> <literal>&gt;&gt;</literal> </entry>
+        <entry> <literal>@&gt;</literal> </entry>
         <entry>contains</entry>
-        <entry><literal>inet '192.168.1/24' &gt;&gt; inet '192.168.1.5'</literal></entry>
+        <entry><literal>inet '192.168.1/24' @&gt; inet '192.168.1.5'</literal></entry>
        </row>
        <row>
-        <entry> <literal>&gt;&gt;=</literal> </entry>
+        <entry> <literal>@&gt;=</literal> </entry>
         <entry>contains or equals</entry>
-        <entry><literal>inet '192.168.1/24' &gt;&gt;= inet '192.168.1/24'</literal></entry>
+        <entry><literal>inet '192.168.1/24' @&gt;= inet '192.168.1/24'</literal></entry>
        </row>
        <row>
         <entry> <literal>&amp;&amp;</literal> </entry>
@@ -8465,13 +8464,25 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
      </tgroup>
     </table>
 
+  <note>
+    <para>
+     Prior to PostgreSQL 9.4, the inclusion operators <literal>&lt;@</literal>,
+     <literal>&lt;@=</literal>, <literal>@&gt;</literal> and
+     <literal>@&gt;=</literal> were called <literal>&lt;&lt;</literal>,
+     <literal>&lt;&lt;=</literal>, <literal>&gt;&gt;</literal> and
+     <literal>&gt;&gt;=</literal> respectively.  These names are still
+     available but are deprecated. They will eventually be removed and
+     may be used for other purposes in the future releases.
+    </para>
+  </note>
+
   <para>
    GiST operator class is included for the <type>cidr</type> and
    <type>inet</type> types, which support indexed queries using
    <literal>&lt;</literal>, <literal>&lt;=</literal>,
    <literal>=</literal>, <literal>&gt;=</literal>, <literal>&gt;</literal>,
-   <literal>&lt;&lt;=</literal>, <literal>&gt;&gt;</literal>,
-   <literal>&gt;&gt;=</literal> and <literal>&amp;&amp;</literal>
+   <literal>&lt;@=</literal>, <literal>@&gt;</literal>,
+   <literal>@&gt;=</literal> and <literal>&amp;&amp;</literal>
    operators.  The operator class considers only the network parts
    of the addresses while creating and using the tree.
   </para>
