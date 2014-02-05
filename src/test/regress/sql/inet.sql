@@ -51,8 +51,8 @@ SELECT '' AS six, c AS cidr, i AS inet FROM INET_TBL
 SELECT '' AS ten, i, c,
   i < c AS lt, i <= c AS le, i = c AS eq,
   i >= c AS ge, i > c AS gt, i <> c AS ne,
-  i << c AS sb, i <<= c AS sbe, i >> c AS sup,
-  i >>= c AS spe, i && c AS ovr
+  i <@ c AS sb, i <@= c AS sbe, i @> c AS sup,
+  i @>= c AS spe, i && c AS ovr
   FROM INET_TBL;
 
 -- check the conversion to/from text and set_netmask
@@ -69,11 +69,11 @@ DROP INDEX inet_idx1;
 -- check that gist index works correctly
 CREATE INDEX inet_idx2 ON inet_tbl using gist (i);
 SET enable_seqscan TO off;
-SELECT * FROM inet_tbl WHERE i << '192.168.1.0/24'::cidr ORDER BY i;
-SELECT * FROM inet_tbl WHERE i <<= '192.168.1.0/24'::cidr ORDER BY i;
+SELECT * FROM inet_tbl WHERE i <@ '192.168.1.0/24'::cidr ORDER BY i;
+SELECT * FROM inet_tbl WHERE i <@= '192.168.1.0/24'::cidr ORDER BY i;
 SELECT * FROM inet_tbl WHERE i && '192.168.1.0/24'::cidr ORDER BY i;
-SELECT * FROM inet_tbl WHERE i >>= '192.168.1.0/24'::cidr ORDER BY i;
-SELECT * FROM inet_tbl WHERE i >> '192.168.1.0/24'::cidr ORDER BY i;
+SELECT * FROM inet_tbl WHERE i @>= '192.168.1.0/24'::cidr ORDER BY i;
+SELECT * FROM inet_tbl WHERE i @> '192.168.1.0/24'::cidr ORDER BY i;
 SELECT * FROM inet_tbl WHERE i < '192.168.1.0/24'::cidr ORDER BY i;
 SELECT * FROM inet_tbl WHERE i <= '192.168.1.0/24'::cidr ORDER BY i;
 SELECT * FROM inet_tbl WHERE i = '192.168.1.0/24'::cidr ORDER BY i;
