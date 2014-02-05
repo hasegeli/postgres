@@ -1449,7 +1449,7 @@ LANGUAGE C IMMUTABLE STRICT;
 
 -- Create the operator class
 CREATE OPERATOR CLASS gist_inet_ops
-DEFAULT FOR TYPE inet USING gist
+FOR TYPE inet USING gist
 AS
 	OPERATOR	1	<   ,
 	OPERATOR	2	<=  ,
@@ -1471,7 +1471,7 @@ ALTER OPERATOR FAMILY gist_inet_ops USING gist ADD
 
 -- Create the operator class
 CREATE OPERATOR CLASS gist_cidr_ops
-DEFAULT FOR TYPE cidr USING gist
+FOR TYPE cidr USING gist
 AS
 	OPERATOR	1	<  (inet, inet)  ,
 	OPERATOR	2	<= (inet, inet)  ,
