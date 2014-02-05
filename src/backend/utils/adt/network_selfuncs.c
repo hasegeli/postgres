@@ -172,10 +172,10 @@ inet_opr_order(Oid operator)
  *
  * Calculates histogram selectivity for the subnet inclusion operators of
  * the inet type. In the normal case, the return value is between 0 and 1.
- * It should be corrected with MVC selectivity and null fraction. If
+ * It should be corrected with the MVC selectivity and null fraction. If
  * the constant is less than the first element or greater than the last
  * element of the histogram the return value will be 0. If the histogram
- * does not available, the return value will be -1.
+ * is not available, the return value will be -1.
  *
  * The histogram is originally for the basic comparison operators. Only
  * the common bits of the network part and the lenght of the network part
@@ -186,33 +186,33 @@ inet_opr_order(Oid operator)
  * To avoid this problem, comparison with the left and the right side of the
  * buckets used together.
  *
- * Histogram bucket matches calculated in 3 forms. If the constant matches
- * the both sides, bucket considered as fully matched. If the constant
- * matches only the right side, bucket does not considered as matched at all.
- * In that case, the ratio for only 1 value in the column added to
- * the selectivity.
+ * Histogram bucket matches are calculated in 3 forms. If the constant
+ * matches both sides the bucket is considered as fully matched. If the
+ * constant matches only the right side the bucket is not considered as
+ * matched at all. In that case the ratio for only one value in the column
+ * is added to the selectivity.
  *
- * The ratio for only 1 value, calculated with the ndistinct variable,
- * if greater than 0. 0 can be given to it if this behavior does not desired.
- * This ratio can be big enough not to disregard for addresses with small
- * masklen's. See pg_statistic for more information about it.
+ * The ratio for only one value is calculated with the ndistinct variable
+ * if greater than 0. 0 can be given if this behavior is not desired.
+ * This ratio can be big enough to not disregard for addresses with small
+ * masklens. See pg_statistic for more information about it.
  *
  * When the constant matches only the right side of the bucket, it will match
  * the next bucket, unless the bucket is the last one. If these buckets would
- * considered as matched, it would lead unfair multiple matches for some
+ * be considered as matched it would lead to unfair multiple matches for some
  * constants.
  *
- * The third form is to match the bucket partially. Two dividers for both
- * of the boundries tried to be calculated, in this case. If the address
- * family of the boundry does not match the constant or comparison of
- * the lenght of the network parts does not true by the operator, the divider
- * for the boundry would not taken into account. If both of the dividers
- * can be calculated, some kind of geometrical mean will be used.
+ * The third form is to match the bucket partially. We try to calculate
+ * dividers for both of the boundaries. If the address family of the boundary
+ * does not match the constant or comparison of the lenght of the network
+ * parts is not true by the operator, the divider for the boundary would not
+ * taken into account. If both of the dividers can be calculated some kind
+ * of geometrical mean of them will be used.
  *
- * For partial match with the buckets which have different address families
- * on the left and right sides, only the boundry with the same address
- * family, taken into consideration. This can cause more mistake for these
- * buckets if their masklen's of their boundries are also disperate. It can
+ * For partial match with buckets which have different address families
+ * on the left and right sides only the boundary with the same address
+ * family is taken into consideration. This can cause more mistakes for these
+ * buckets if the masklens of their boundaries are also disparate. It can
  * only be the case for one bucket, if there are addresses with different
  * families on the column. It seems as a better option than not considering
  * these buckets.
@@ -375,9 +375,9 @@ inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order)
 /*
  * Inet histogram partial match divider calculation
  *
- * First, the families and the lenghts of the network parts are compared
- * using the subnet inclusion operator. If they are not -1 returned which
- * means divider not available.
+ * First the families and the lenghts of the network parts are compared
+ * using the subnet inclusion operator. If they are not equal -1 returned is
+ * which means a divider not available.
  *
  * The divider is imagined as the distance between the decisive bits and
  * the common bits of the addresses. The divider will be used as power of two
