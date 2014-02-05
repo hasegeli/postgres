@@ -120,15 +120,15 @@ typedef struct macaddr
 /*
  * Operator strategy numbers used in the GiST network opclass
  */
-#define INETSTRAT_SUB			11
-#define INETSTRAT_SUBEQ			8
+#define INETSTRAT_SUB			8
+#define INETSTRAT_SUBEQ			11
 #define INETSTRAT_OVERLAPS		3
-#define INETSTRAT_SUPEQ			7
-#define INETSTRAT_SUP			10
-#define INETSTRAT_LT			16
-#define INETSTRAT_LE			17
+#define INETSTRAT_SUPEQ			10
+#define INETSTRAT_SUP			7
+#define INETSTRAT_LT			19
+#define INETSTRAT_LE			21
 #define INETSTRAT_EQ			18
-#define INETSTRAT_GE			19
+#define INETSTRAT_GE			22
 #define INETSTRAT_GT			20
 
 /*
