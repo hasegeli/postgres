@@ -14,6 +14,8 @@
  */
 #include "postgres.h"
 
+#include <sys/socket.h>
+
 #include "access/gist.h"
 #include "access/skey.h"
 #include "utils/inet.h"
