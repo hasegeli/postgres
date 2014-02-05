@@ -1140,21 +1140,33 @@ DATA(insert OID = 1205 (  ">"	   PGNSP PGUID b f f 869 869	 16 1203 1204 network
 DESCR("greater than");
 DATA(insert OID = 1206 (  ">="	   PGNSP PGUID b f f 869 869	 16 1204 1203 network_ge scalargtsel scalargtjoinsel ));
 DESCR("greater than or equal");
-DATA(insert OID = 931  (  "<<"	   PGNSP PGUID b f f 869 869	 16 933		0 network_sub inetinclusionsel contjoinsel ));
+DATA(insert OID = 931  (  "<<"	   PGNSP PGUID b f f 869 869	 16 933		0 network_sub - - ));
 DESCR("is subnet");
 #define OID_INET_SUB_OP				  931
-DATA(insert OID = 932  (  "<<="    PGNSP PGUID b f f 869 869	 16 934		0 network_subeq inetinclusionsel contjoinsel ));
+DATA(insert OID = 932  (  "<<="    PGNSP PGUID b f f 869 869	 16 934		0 network_subeq - - ));
 DESCR("is subnet or equal");
 #define OID_INET_SUBEQ_OP				932
-DATA(insert OID = 933  (  ">>"	   PGNSP PGUID b f f 869 869	 16 931		0 network_sup inetinclusionsel contjoinsel ));
+DATA(insert OID = 933  (  ">>"	   PGNSP PGUID b f f 869 869	 16 931		0 network_sup - - ));
 DESCR("is supernet");
 #define OID_INET_SUP_OP				  933
-DATA(insert OID = 934  (  ">>="    PGNSP PGUID b f f 869 869	 16 932		0 network_supeq inetinclusionsel contjoinsel ));
+DATA(insert OID = 934  (  ">>="    PGNSP PGUID b f f 869 869	 16 932		0 network_supeq - - ));
 DESCR("is supernet or equal");
 #define OID_INET_SUPEQ_OP				934
-DATA(insert OID = 4050  (  "&&"    PGNSP PGUID b f f 869 869	 16 4050  	0 network_overlap inetinclusionsel contjoinsel ));
-DESCR("overlaps (is subnet or supernet)");
-#define OID_INET_OVERLAP_OP				4050
+DATA(insert OID = 4046 (  "&&"	   PGNSP PGUID b f f 869 869	 16 4046  	0 inet_overlap inetinclusionsel contjoinsel ));
+DESCR("overlaps");
+#define OID_INET_OVERLAP_OP				4046
+DATA(insert OID = 4047 (  "@>"	   PGNSP PGUID b f f 869 869	 16 4048	0 inet_contain inetinclusionsel contjoinsel ));
+DESCR("contains");
+#define OID_INET_CONTAINS_OP			4047
+DATA(insert OID = 4048 (  "<@"	   PGNSP PGUID b f f 869 869	 16 4047	0 inet_contained inetinclusionsel contjoinsel ));
+DESCR("is contained within");
+#define OID_INET_CONTAINED_OP			4048
+DATA(insert OID = 4049 (  "@>="	   PGNSP PGUID b f f 869 869	 16 4050	0 inet_containeq inetinclusionsel contjoinsel ));
+DESCR("contains or equals");
+#define OID_INET_CONTAINSEQ_OP			4049
+DATA(insert OID = 4050 (  "<@="	   PGNSP PGUID b f f 869 869	 16 4049	0 inet_containedeq inetinclusionsel contjoinsel ));
+DESCR("is contained within or equals");
+#define OID_INET_CONTAINEDEQ_OP			4050
 
 DATA(insert OID = 2634 (  "~"	   PGNSP PGUID l f f	  0 869 869 0 0 inetnot - - ));
 DESCR("bitwise not");

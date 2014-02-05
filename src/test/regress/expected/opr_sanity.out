@@ -1105,15 +1105,13 @@ ORDER BY 1, 2, 3;
         783 |            5 | >>
         783 |            6 | -|-
         783 |            6 | ~=
-        783 |            7 | >>
         783 |            7 | @>
-        783 |            8 | <<
         783 |            8 | <@
         783 |            9 | &<|
         783 |           10 | <<|
         783 |           10 | <^
-        783 |           10 | >>=
-        783 |           11 | <<=
+        783 |           10 | @>=
+        783 |           11 | <@=
         783 |           11 | >^
         783 |           11 | |>>
         783 |           12 | |&>
@@ -1157,7 +1155,7 @@ ORDER BY 1, 2, 3;
        4000 |           15 | >
        4000 |           16 | @>
        4000 |           18 | =
-(75 rows)
+(73 rows)
 
 -- Check that all opclass search operators have selectivity estimators.
 -- This is not absolutely required, but it seems a reasonable thing

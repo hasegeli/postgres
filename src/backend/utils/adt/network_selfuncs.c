@@ -152,15 +152,15 @@ inet_opr_order(Oid operator)
 {
 	switch (operator)
 	{
-		case OID_INET_SUP_OP:
+		case OID_INET_CONTAINS_OP:
 			return -2;
-		case OID_INET_SUPEQ_OP:
+		case OID_INET_CONTAINSEQ_OP:
 			return -1;
 		case OID_INET_OVERLAP_OP:
 			return 0;
-		case OID_INET_SUBEQ_OP:
+		case OID_INET_CONTAINEDEQ_OP:
 			return 1;
-		case OID_INET_SUB_OP:
+		case OID_INET_CONTAINED_OP:
 			return 2;
 	}
 
