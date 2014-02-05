@@ -112,16 +112,16 @@
       <entry><type>inet</>, <type>cidr</></entry>
       <entry>
        <literal>&amp;&amp;</>
-       <literal>&gt;&gt;</>
-       <literal>&gt;&gt;=</>
        <literal>&gt;</>
        <literal>&gt;=</>
        <literal>&lt;&gt;</>
-       <literal>&lt;&lt;</>
-       <literal>&lt;&lt;=</>
+       <literal>&lt;@</>
+       <literal>&lt;@=</>
        <literal>&lt;</>
        <literal>&lt;=</>
        <literal>=</>
+       <literal>@&gt;</>
+       <literal>@&gt;=</>
       </entry>
       <entry>
       </entry>

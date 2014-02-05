@@ -8433,9 +8433,9 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
   <para>
    <xref linkend="cidr-inet-operators-table"> shows the operators
    available for the <type>cidr</type> and <type>inet</type> types.
-   The operators <literal>&lt;&lt;</literal>,
-   <literal>&lt;&lt;=</literal>, <literal>&gt;&gt;</literal>,
-   <literal>&gt;&gt;=</literal>, and <literal>&amp;&amp;</literal>
+   The operators <literal>&lt;@</literal>,
+   <literal>&lt;@=</literal>, <literal>@&gt;</literal>,
+   <literal>@&gt;=</literal>, and <literal>&amp;&amp;</literal>
    test for subnet inclusion.  They
    consider only the network parts of the two addresses (ignoring any
    host part) and determine whether one network is identical to
@@ -8486,22 +8486,22 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
        <row>
         <entry> <literal>&lt;&lt;</literal> </entry>
         <entry>is contained by</entry>
-        <entry><literal>inet '192.168.1.5' &lt;&lt; inet '192.168.1/24'</literal></entry>
+        <entry><literal>inet '192.168.1.5' &lt;@ inet '192.168.1/24'</literal></entry>
        </row>
        <row>
         <entry> <literal>&lt;&lt;=</literal> </entry>
         <entry>is contained by or equals</entry>
-        <entry><literal>inet '192.168.1/24' &lt;&lt;= inet '192.168.1/24'</literal></entry>
+        <entry><literal>inet '192.168.1/24' &lt;@= inet '192.168.1/24'</literal></entry>
        </row>
        <row>
-        <entry> <literal>&gt;&gt;</literal> </entry>
+        <entry> <literal>@&gt;</literal> </entry>
         <entry>contains</entry>
-        <entry><literal>inet '192.168.1/24' &gt;&gt; inet '192.168.1.5'</literal></entry>
+        <entry><literal>inet '192.168.1/24' @&gt; inet '192.168.1.5'</literal></entry>
        </row>
        <row>
-        <entry> <literal>&gt;&gt;=</literal> </entry>
+        <entry> <literal>@&gt;=</literal> </entry>
         <entry>contains or equals</entry>
-        <entry><literal>inet '192.168.1/24' &gt;&gt;= inet '192.168.1/24'</literal></entry>
+        <entry><literal>inet '192.168.1/24' @&gt;= inet '192.168.1/24'</literal></entry>
        </row>
        <row>
         <entry> <literal>&amp;&amp;</literal> </entry>
@@ -8541,6 +8541,18 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
       </tbody>
      </tgroup>
     </table>
+
+  <note>
+    <para>
+     Prior to PostgreSQL 9.4, the inclusion operators <literal>&lt;@</literal>,
+     <literal>&lt;@=</literal>, <literal>@&gt;</literal> and
+     <literal>@&gt;=</literal> were called <literal>&lt;&lt;</literal>,
+     <literal>&lt;&lt;=</literal>, <literal>&gt;&gt;</literal> and
+     <literal>&gt;&gt;=</literal> respectively.  These names are still
+     available but are deprecated. They will eventually be removed and
+     may be used for other purposes in the future releases.
+    </para>
+  </note>
 
   <para>
    <xref linkend="cidr-inet-functions-table"> shows the functions
