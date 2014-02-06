@@ -978,10 +978,7 @@ bitncmp(void *l, void *r, int n)
 /*
  * Compare bit masks l and r for n bits
  *
- * Return the common bit count from the beginning. In contrast to
- * it's purpose, it checks the bits from the end to the beggining
- * to be more effective on modern computers based on the assumption
- * that the inputs will usually be similar. Additional bits on the
+ * Return the common bit count from the beginning. Additional bits on the
  * right would not effect the return value as expected. The return
  * value is always less than the input n.
  */
@@ -992,17 +989,15 @@ bitncommon(unsigned char *l, unsigned char *r, int n)
 				nbits;
 	unsigned char diff;
 
-	byte = n / 8;
 	nbits = n % 8;
 
-	/* Compare bytes from the most to the least */
-	while (byte != 0 && memcmp(l, r, byte) != 0)
-	{
-		byte--;
-
-		/* At least one more bit in the last byte is not common */
-		nbits = 7;
-	}
+	for (byte = 0; byte < n / 8; byte++)
+		if (l[byte] != r[byte])
+		{
+			/* At least one more bit in the last byte is not common */
+			nbits = 7;
+			break;
+		}
 
 	/* Set the bits to discard */
 	if (nbits != 0)
