@@ -45,7 +45,7 @@ static Selectivity inet_hist_inclusion_selectivity(VariableStatData *vardata,
 												   int opr_order);
 static int inet_inclusion_cmp(inet *left, inet *right, int opr_order);
 static int inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order);
-static double inet_hist_match_divider(inet *hist, inet *query, int opr_order);
+static int inet_hist_match_divider(inet *hist, inet *query, int opr_order);
 
 /*
  * Selectivity estimation for the subnet inclusion operators
@@ -206,8 +206,15 @@ inet_opr_order(Oid operator)
  * dividers for both of the boundaries. If the address family of the boundary
  * does not match the constant or comparison of the lenght of the network
  * parts is not true by the operator, the divider for the boundary would not
- * taken into account. If both of the dividers can be calculated some kind
- * of geometrical mean of them will be used.
+ * taken into account. If both of the dividers can be calculated the greater
+ * one will be used to mimimize the mistake in the buckets which have
+ * disperate masklens.
+ *
+ * The divider on the partial bucket match is imagined as the distance
+ * between the decisive bits and the common bits of the addresses. It will be
+ * used as power of two as it is the natural scale for the IP network
+ * inclusion. The partial bucket match divider calculation is an empirical
+ * formula and subject to change with more experiment.
  *
  * For partial match with buckets which have different address families
  * on the left and right sides only the boundary with the same address
@@ -260,7 +267,7 @@ inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
 				/* Full bucket match. */
 				match += 1.0;
 			else
-				/* Only right side match. */
+				/* Only right boundry match. */
 				if (ndistinct > 0)
 					match += 1.0 / ndistinct;
 		}
@@ -270,23 +277,12 @@ inet_hist_inclusion_selectivity(VariableStatData *vardata, Datum constvalue,
 			left_divider = inet_hist_match_divider(left, query, opr_order);
 			right_divider = inet_hist_match_divider(right, query, opr_order);
 
-			/* right_divider cannot be 0 because right_order is not. */
-			if (left_divider >= 0 || right_divider > 0)
-			{
-				/* Partial bucket match. */
-
-				if (left_divider > 0)
-					if (right_divider > 0)
-						divider = 2.0 * (left_divider * right_divider) /
-										(left_divider + right_divider);
-					else
-						divider = left_divider;
-
-				else
-					divider = right_divider;
-
-				match += 1.0 / divider;
-			}
+			if (left_divider > right_divider && left_divider > 0)
+				/* Partial bucket left boundry match. */
+				match += 1.0 / pow(2, left_divider);
+			else if (right_divider > 0)
+				/* Partial bucket right boundry match. */
+				match += 1.0 / pow(2, right_divider);
 		}
 
 		/* Shift the variables. */
@@ -377,14 +373,11 @@ inet_masklen_inclusion_cmp(inet *left, inet *right, int opr_order)
  *
  * First the families and the lenghts of the network parts are compared
  * using the subnet inclusion operator. If they are not equal -1 returned is
- * which means a divider not available.
- *
- * The divider is imagined as the distance between the decisive bits and
- * the common bits of the addresses. The divider will be used as power of two
- * as it is the natural scale for the IP network inclusion. It is
- * an empirical formula and subject to change with more experiment.
+ * which means a divider not available. Othervise the divider will be
+ * calculated using the masklens and the common bits of the addresses of
+ * the inputs.
  */
-static double
+static int
 inet_hist_match_divider(inet *hist, inet *query, int opr_order)
 {
 	if (inet_masklen_inclusion_cmp(hist, query, opr_order) == 0)
@@ -406,10 +399,9 @@ inet_hist_match_divider(inet *hist, inet *query, int opr_order)
 			decisive_bits = min_bits;
 
 		if (min_bits > 0)
-			decisive_bits -= bitncommon(ip_addr(hist), ip_addr(query),
-										min_bits);
-
-		return pow(2, decisive_bits);
+			return decisive_bits - bitncommon(ip_addr(hist), ip_addr(query),
+											  min_bits);
+		return decisive_bits;
 	}
 
 	return -1;
