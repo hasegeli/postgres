@@ -9,7 +9,7 @@ OBJS =  btree_gist.o btree_utils_num.o btree_utils_var.o btree_int2.o \
         btree_numeric.o
 
 EXTENSION = btree_gist
-DATA = btree_gist--1.0.sql btree_gist--unpackaged--1.0.sql
+DATA = btree_gist--1.1.sql btree_gist--unpackaged--1.0.sql
 
 REGRESS = init int2 int4 int8 float4 float8 cash oid timestamp timestamptz \
         time timetz date interval macaddr inet cidr text varchar char bytea \
