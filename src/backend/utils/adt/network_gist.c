@@ -93,6 +93,7 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 			break;
 
 		case INETSTRAT_SUPEQ:
+		case INETSTRAT_EQ:
 			if (ip_bits(orig) > ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
