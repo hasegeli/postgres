@@ -8547,10 +8547,11 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
    <type>inet</type> types, which support indexed queries using
    <literal>&lt;</literal>, <literal>&lt;=</literal>,
    <literal>=</literal>, <literal>&gt;=</literal>, <literal>&gt;</literal>,
-   <literal>&lt;&lt;=</literal>, <literal>&gt;&gt;</literal>,
-   <literal>&gt;&gt;=</literal> and <literal>&amp;&amp;</literal>
-   operators.  The operator class considers only the network parts
-   of the addresses while creating and using the tree.
+   <literal>&lt;&gt;</literal>, <literal>&lt;&lt;=</literal>,
+   <literal>&gt;&gt;</literal>, <literal>&gt;&gt;=</literal> and
+   <literal>&amp;&amp;</literal> operators. The operator class
+   considers only the network parts of the addresses while creating
+   and using the tree.
   </para>
 
   <para>

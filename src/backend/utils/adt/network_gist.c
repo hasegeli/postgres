@@ -69,6 +69,9 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 				if (ip_family(orig) > ip_family(query))
 					PG_RETURN_BOOL(true);
 				break;
+
+			case INETSTRAT_NE:
+				PG_RETURN_BOOL(true);
 		}
 
 		PG_RETURN_BOOL(false);
@@ -169,6 +172,11 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 				if (order > 0 || !GIST_LEAF(ent))
 					PG_RETURN_BOOL(true);
 				break;
+
+			case INETSTRAT_NE:
+				if (order != 0 || !GIST_LEAF(ent))
+					PG_RETURN_BOOL(true);
+				break;
 		}
 	}
 
@@ -205,6 +213,11 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 			if (ip_bits(orig) < ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
+
+		case INETSTRAT_NE:
+			if (ip_bits(orig) != ip_bits(query))
+				PG_RETURN_BOOL(true);
+			break;
 	}
 
 	order = bitncmp(ip_addr(orig), ip_addr(query), ip_maxbits(orig));
@@ -231,6 +244,9 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 
 		case INETSTRAT_GT:
 			PG_RETURN_BOOL(order > 0);
+
+		case INETSTRAT_NE:
+			PG_RETURN_BOOL(order != 0);
 	}
 
 	elog(ERROR, "unknown strategy for inet GiST");
