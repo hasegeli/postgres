@@ -794,7 +794,7 @@ DATA(insert (	3474   3831 3831 18 s	3882 4000 0 ));
 /*
  * GiST inet_ops
  */
-DATA(insert (	4049	869	869	3 s		4050 783 0 ));
+DATA(insert (	4049	869	869	3 s		4041 783 0 ));
 DATA(insert (	4049	869	869	7 s		933 783 0 ));
 DATA(insert (	4049	869	869	8 s		931 783 0 ));
 DATA(insert (	4049	869	869	9 s		934 783 0 ));
