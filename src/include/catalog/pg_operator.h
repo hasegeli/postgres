@@ -1154,6 +1154,14 @@ DESCR("is supernet or equal");
 #define OID_INET_SUPEQ_OP				934
 DATA(insert OID = 3552	(  "&&"    PGNSP PGUID b f f 869 869	 16 3552	0 network_overlap networksel networkjoinsel ));
 DESCR("overlaps (is subnet or supernet)");
+DATA(insert OID = 3562  (  "@>"	   PGNSP PGUID b f f 869 869	 16 3563	0 network_contains networksel networkjoinsel ));
+DESCR("is supernet");
+DATA(insert OID = 3563  (  "<@"	   PGNSP PGUID b f f 869 869	 16 3562	0 network_contained networksel networkjoinsel ));
+DESCR("is subnet");
+DATA(insert OID = 3564  (  "@>="    PGNSP PGUID b f f 869 869	 16 3565	0 network_containseq networksel networkjoinsel ));
+DESCR("is supernet or equal");
+DATA(insert OID = 3565  (  "<@="    PGNSP PGUID b f f 869 869	 16 3564	0 network_containedeq networksel networkjoinsel ));
+DESCR("is subnet or equal");
 
 DATA(insert OID = 2634 (  "~"	   PGNSP PGUID l f f	  0 869 869 0 0 inetnot - - ));
 DESCR("bitwise not");

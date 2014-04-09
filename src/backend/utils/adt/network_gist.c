@@ -55,16 +55,16 @@
  * Operator strategy numbers used in the GiST inet_ops opclass
  */
 #define INETSTRAT_OVERLAPS		3
+#define INETSTRAT_SUP			7
+#define INETSTRAT_SUB			8
 #define INETSTRAT_EQ			18
 #define INETSTRAT_NE			19
 #define INETSTRAT_LT			20
 #define INETSTRAT_LE			21
 #define INETSTRAT_GT			22
 #define INETSTRAT_GE			23
-#define INETSTRAT_SUB			24
+#define INETSTRAT_SUPEQ			24
 #define INETSTRAT_SUBEQ			25
-#define INETSTRAT_SUP			26
-#define INETSTRAT_SUPEQ			27
 
 
 /*
