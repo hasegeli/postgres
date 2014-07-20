@@ -815,6 +815,7 @@ DATA(insert OID = 726 (  dist_lb		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 70
 DATA(insert OID = 727 (  dist_sl		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "601 628" _null_ _null_ _null_ _null_	dist_sl _null_ _null_ _null_ ));
 DATA(insert OID = 728 (  dist_cpoly		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "718 604" _null_ _null_ _null_ _null_	dist_cpoly _null_ _null_ _null_ ));
 DATA(insert OID = 729 (  poly_distance	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "604 604" _null_ _null_ _null_ _null_	poly_distance _null_ _null_ _null_ ));
+DATA(insert OID = 3590 (  dist_polyp	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "604 600" _null_ _null_ _null_ _null_	dist_polyp _null_ _null_ _null_ ));
 
 DATA(insert OID = 740 (  text_lt		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "25 25" _null_ _null_ _null_ _null_ text_lt _null_ _null_ _null_ ));
 DATA(insert OID = 741 (  text_le		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "25 25" _null_ _null_ _null_ _null_ text_le _null_ _null_ _null_ ));
