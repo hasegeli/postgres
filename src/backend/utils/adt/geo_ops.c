@@ -2676,6 +2676,55 @@ dist_cpoly(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8(result);
 }
 
+/*
+ * Distance from polygon to point.
+ */
+Datum
+dist_polyp(PG_FUNCTION_ARGS)
+{
+	POLYGON    *poly = PG_GETARG_POLYGON_P(0);
+	Point	   *point = PG_GETARG_POINT_P(1);
+	float8		result;
+	float8		d;
+	int			i;
+	LSEG		seg;
+
+	if (point_inside(point, poly->npts, poly->p) != 0)
+	{
+#ifdef GEODEBUG
+		printf("dist_polyp- point inside of polygon\n");
+#endif
+		PG_RETURN_FLOAT8(0.0);
+	}
+
+	/* initialize distance with segment between first and last points */
+	seg.p[0].x = poly->p[0].x;
+	seg.p[0].y = poly->p[0].y;
+	seg.p[1].x = poly->p[poly->npts - 1].x;
+	seg.p[1].y = poly->p[poly->npts - 1].y;
+	result = dist_ps_internal(point, &seg);
+#ifdef GEODEBUG
+	printf("dist_polyp- segment 0/n distance is %f\n", result);
+#endif
+
+	/* check distances for other segments */
+	for (i = 0; i < poly->npts - 1; i++)
+	{
+		seg.p[0].x = poly->p[i].x;
+		seg.p[0].y = poly->p[i].y;
+		seg.p[1].x = poly->p[i + 1].x;
+		seg.p[1].y = poly->p[i + 1].y;
+		d = dist_ps_internal(point, &seg);
+#ifdef GEODEBUG
+		printf("dist_polyp- segment %d distance is %f\n", i + 1, d);
+#endif
+		if (d < result)
+			result = d;
+	}
+
+	PG_RETURN_FLOAT8(result);
+}
+
 
 /*---------------------------------------------------------------------
  *		interpt_

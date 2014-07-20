@@ -593,6 +593,8 @@ DATA(insert OID = 709 (  "<->"	   PGNSP PGUID b f f 601 601 701 709	 0 lseg_dist
 DESCR("distance between");
 DATA(insert OID = 712 (  "<->"	   PGNSP PGUID b f f 604 604 701 712	 0 poly_distance - - ));
 DESCR("distance between");
+DATA(insert OID = 3591 (  "<->"	   PGNSP PGUID b f f 604 600 701 0 		 0 dist_polyp - - ));
+DESCR("distance between");
 
 DATA(insert OID = 713 (  "<>"	   PGNSP PGUID b f f 600 600	16 713 510 point_ne neqsel neqjoinsel ));
 DESCR("not equal");
