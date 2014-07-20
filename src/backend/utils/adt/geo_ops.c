@@ -2415,6 +2415,9 @@ lseg_interpt(PG_FUNCTION_ARGS)
  *				Minimum distance from one object to another.
  *-------------------------------------------------------------------*/
 
+/*
+ * Distance from a point to a line
+ */
 Datum
 dist_pl(PG_FUNCTION_ARGS)
 {
@@ -2431,6 +2434,9 @@ dist_pl_internal(Point *pt, LINE *line)
 				HYPOT(line->A, line->B));
 }
 
+/*
+ * Distance from a point to a lseg
+ */
 Datum
 dist_ps(PG_FUNCTION_ARGS)
 {
@@ -2494,7 +2500,7 @@ dist_ps_internal(Point *pt, LSEG *lseg)
 }
 
 /*
- ** Distance from a point to a path
+ * Distance from a point to a path
  */
 Datum
 dist_ppath(PG_FUNCTION_ARGS)
@@ -2550,6 +2556,9 @@ dist_ppath(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8(result);
 }
 
+/*
+ * Distance from a point to a box
+ */
 Datum
 dist_pb(PG_FUNCTION_ARGS)
 {
@@ -2566,7 +2575,9 @@ dist_pb(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8(result);
 }
 
-
+/*
+ * Distance from a lseg to a line
+ */
 Datum
 dist_sl(PG_FUNCTION_ARGS)
 {
@@ -2589,7 +2600,9 @@ dist_sl(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8(result);
 }
 
-
+/*
+ * Distance from a lseg to a box
+ */
 Datum
 dist_sb(PG_FUNCTION_ARGS)
 {
@@ -2608,7 +2621,9 @@ dist_sb(PG_FUNCTION_ARGS)
 	PG_RETURN_DATUM(result);
 }
 
-
+/*
+ * Distance from a line to a box
+ */
 Datum
 dist_lb(PG_FUNCTION_ARGS)
 {
@@ -2625,7 +2640,9 @@ dist_lb(PG_FUNCTION_ARGS)
 	PG_RETURN_NULL();
 }
 
-
+/*
+ * Distance from a circle to a polygon
+ */
 Datum
 dist_cpoly(PG_FUNCTION_ARGS)
 {
@@ -2677,22 +2694,22 @@ dist_cpoly(PG_FUNCTION_ARGS)
 }
 
 /*
- * Distance from polygon to point.
+ * Distance from a point to a polygon
  */
 Datum
-dist_polyp(PG_FUNCTION_ARGS)
+dist_ppoly(PG_FUNCTION_ARGS)
 {
-	POLYGON    *poly = PG_GETARG_POLYGON_P(0);
-	Point	   *point = PG_GETARG_POINT_P(1);
+	Point	   *point = PG_GETARG_POINT_P(0);
+	POLYGON    *poly = PG_GETARG_POLYGON_P(1);
 	float8		result;
-	float8		d;
+	float8		distance;
 	int			i;
 	LSEG		seg;
 
 	if (point_inside(point, poly->npts, poly->p) != 0)
 	{
 #ifdef GEODEBUG
-		printf("dist_polyp- point inside of polygon\n");
+		printf("dist_ppoly- point inside of polygon\n");
 #endif
 		PG_RETURN_FLOAT8(0.0);
 	}
@@ -2704,7 +2721,7 @@ dist_polyp(PG_FUNCTION_ARGS)
 	seg.p[1].y = poly->p[poly->npts - 1].y;
 	result = dist_ps_internal(point, &seg);
 #ifdef GEODEBUG
-	printf("dist_polyp- segment 0/n distance is %f\n", result);
+	printf("dist_ppoly- segment 0/n distance is %f\n", result);
 #endif
 
 	/* check distances for other segments */
@@ -2714,12 +2731,12 @@ dist_polyp(PG_FUNCTION_ARGS)
 		seg.p[0].y = poly->p[i].y;
 		seg.p[1].x = poly->p[i + 1].x;
 		seg.p[1].y = poly->p[i + 1].y;
-		d = dist_ps_internal(point, &seg);
+		distance = dist_ps_internal(point, &seg);
 #ifdef GEODEBUG
-		printf("dist_polyp- segment %d distance is %f\n", i + 1, d);
+		printf("dist_ppoly- segment %d distance is %f\n", i + 1, distance);
 #endif
-		if (d < result)
-			result = d;
+		if (distance < result)
+			result = distance;
 	}
 
 	PG_RETURN_FLOAT8(result);
