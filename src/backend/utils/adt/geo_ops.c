@@ -70,6 +70,7 @@ static Point *interpt_sl(LSEG *lseg, LINE *line);
 static bool has_interpt_sl(LSEG *lseg, LINE *line);
 static double dist_pl_internal(Point *pt, LINE *line);
 static double dist_ps_internal(Point *pt, LSEG *lseg);
+static float8 dist_ppoly_internal(Point *point, POLYGON *poly);
 static Point *line_interpt_internal(LINE *l1, LINE *l2);
 static bool lseg_inside_poly(Point *a, Point *b, POLYGON *poly, int start);
 static Point *lseg_interpt_internal(LSEG *l1, LSEG *l2);
@@ -2641,6 +2642,38 @@ dist_lb(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Distance from a point to a circle
+ */
+Datum
+dist_pc(PG_FUNCTION_ARGS)
+{
+	Point	   *point = PG_GETARG_POINT_P(0);
+	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(1);
+	float8		result;
+
+	result = point_dt(point, &circle->center) - circle->radius;
+	if (result < 0)
+		result = 0;
+	PG_RETURN_FLOAT8(result);
+}
+
+/*
+ * Distance from a circle to a point
+ */
+Datum
+dist_cpoint(PG_FUNCTION_ARGS)
+{
+	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(0);
+	Point	   *point = PG_GETARG_POINT_P(1);
+	float8		result;
+
+	result = point_dt(point, &circle->center) - circle->radius;
+	if (result < 0)
+		result = 0;
+	PG_RETURN_FLOAT8(result);
+}
+
+/*
  * Distance from a circle to a polygon
  */
 Datum
@@ -2699,8 +2732,23 @@ dist_cpoly(PG_FUNCTION_ARGS)
 Datum
 dist_ppoly(PG_FUNCTION_ARGS)
 {
-	Point	   *point = PG_GETARG_POINT_P(0);
-	POLYGON    *poly = PG_GETARG_POLYGON_P(1);
+	PG_RETURN_FLOAT8(dist_ppoly_internal(PG_GETARG_POINT_P(0),
+										 PG_GETARG_POLYGON_P(1)));
+}
+
+/*
+ * Distance from a polygon to a point
+ */
+Datum
+dist_polyp(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_FLOAT8(dist_ppoly_internal(PG_GETARG_POINT_P(1),
+										 PG_GETARG_POLYGON_P(0)));
+}
+
+static float8
+dist_ppoly_internal(Point *point, POLYGON *poly)
+{
 	float8		result;
 	float8		distance;
 	int			i;
@@ -2711,7 +2759,7 @@ dist_ppoly(PG_FUNCTION_ARGS)
 #ifdef GEODEBUG
 		printf("dist_ppoly- point inside of polygon\n");
 #endif
-		PG_RETURN_FLOAT8(0.0);
+		return 0.0;
 	}
 
 	/* initialize distance with segment between first and last points */
@@ -2739,7 +2787,7 @@ dist_ppoly(PG_FUNCTION_ARGS)
 			result = distance;
 	}
 
-	PG_RETURN_FLOAT8(result);
+	return result;
 }
 
 
@@ -5095,23 +5143,6 @@ pt_contained_circle(PG_FUNCTION_ARGS)
 
 	d = point_dt(&circle->center, point);
 	PG_RETURN_BOOL(d <= circle->radius);
-}
-
-
-/*		dist_pc -		returns the distance between
- *						  a point and a circle.
- */
-Datum
-dist_pc(PG_FUNCTION_ARGS)
-{
-	Point	   *point = PG_GETARG_POINT_P(0);
-	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(1);
-	float8		result;
-
-	result = point_dt(point, &circle->center) - circle->radius;
-	if (result < 0)
-		result = 0;
-	PG_RETURN_FLOAT8(result);
 }
 
 

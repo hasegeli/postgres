@@ -17,6 +17,9 @@
 #include "access/gist_private.h"
 #include "access/gistscan.h"
 #include "access/relscan.h"
+#include "catalog/index.h"
+#include "executor/executor.h"
+#include "executor/tuptable.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
@@ -36,8 +39,18 @@ GISTSearchTreeItemComparator(const RBNode *a, const RBNode *b, void *arg)
 	/* Order according to distance comparison */
 	for (i = 0; i < scan->numberOfOrderBys; i++)
 	{
-		if (sa->distances[i] != sb->distances[i])
-			return (sa->distances[i] > sb->distances[i]) ? 1 : -1;
+		const GISTSearchTreeItemDistance distance_a = sa->distances[i];
+		const GISTSearchTreeItemDistance distance_b = sb->distances[i];
+
+		if (distance_a.value != distance_b.value)
+			return (distance_a.value > distance_b.value) ? 1 : -1;
+
+		/*
+		 * Items without recheck can be immediately returned.  So they are
+		 * placed first.
+		 */
+		if (distance_a.recheck != distance_b.recheck)
+			return distance_a.recheck ? 1 : -1;
 	}
 
 	return 0;
@@ -83,7 +96,7 @@ GISTSearchTreeItemAllocator(void *arg)
 {
 	IndexScanDesc scan = (IndexScanDesc) arg;
 
-	return palloc(GSTIHDRSZ + sizeof(double) * scan->numberOfOrderBys);
+	return palloc(GSTIHDRSZ + sizeof(GISTSearchTreeItemDistance) * scan->numberOfOrderBys);
 }
 
 static void
@@ -127,9 +140,21 @@ gistbeginscan(PG_FUNCTION_ARGS)
 	so->queueCxt = giststate->scanCxt;	/* see gistrescan */
 
 	/* workspaces with size dependent on numberOfOrderBys: */
-	so->tmpTreeItem = palloc(GSTIHDRSZ + sizeof(double) * scan->numberOfOrderBys);
-	so->distances = palloc(sizeof(double) * scan->numberOfOrderBys);
+	so->tmpTreeItem = palloc(GSTIHDRSZ + sizeof(GISTSearchTreeItemDistance) *
+										 scan->numberOfOrderBys);
+	so->distances = palloc(sizeof(GISTSearchTreeItemDistance) *
+						   scan->numberOfOrderBys);
 	so->qual_ok = true;			/* in case there are zero keys */
+
+	if (scan->numberOfOrderBys > 0)
+	{
+		/* Prepare data structures for distance recheck from heap tuple */
+
+		so->orderByRechecks = (FmgrInfo *)palloc(sizeof(FmgrInfo)
+													* scan->numberOfOrderBys);
+		so->indexInfo = BuildIndexInfo(scan->indexRelation);
+		so->estate = CreateExecutorState();
+	}
 
 	scan->opaque = so;
 
@@ -186,9 +211,16 @@ gistrescan(PG_FUNCTION_ARGS)
 		first_time = false;
 	}
 
+	if (scan->numberOfOrderBys > 0 && !so->slot)
+	{
+		/* Prepare heap tuple slot for distance recheck */
+		so->slot = MakeSingleTupleTableSlot(RelationGetDescr(scan->heapRelation));
+	}
+
 	/* create new, empty RBTree for search queue */
 	oldCxt = MemoryContextSwitchTo(so->queueCxt);
-	so->queue = rb_create(GSTIHDRSZ + sizeof(double) * scan->numberOfOrderBys,
+	so->queue = rb_create(GSTIHDRSZ + sizeof(GISTSearchTreeItemDistance) *
+									  scan->numberOfOrderBys,
 						  GISTSearchTreeItemComparator,
 						  GISTSearchTreeItemCombiner,
 						  GISTSearchTreeItemAllocator,
@@ -289,6 +321,10 @@ gistrescan(PG_FUNCTION_ARGS)
 					 GIST_DISTANCE_PROC, skey->sk_attno,
 					 RelationGetRelationName(scan->indexRelation));
 
+			/* Copy original sk_func for distance recheck from heap tuple */
+			fmgr_info_copy(&so->orderByRechecks[i], &(skey->sk_func),
+						   so->giststate->scanCxt);
+
 			fmgr_info_copy(&(skey->sk_func), finfo, so->giststate->scanCxt);
 
 			/* Restore prior fn_extra pointers, if not first time */
@@ -322,6 +358,9 @@ gistendscan(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
+
+	if (so->slot)
+		ExecDropSingleTupleTableSlot(so->slot);
 
 	/*
 	 * freeGISTstate is enough to clean up everything made by gistbeginscan,

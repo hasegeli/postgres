@@ -816,6 +816,8 @@ DATA(insert OID = 727 (  dist_sl		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 70
 DATA(insert OID = 728 (  dist_cpoly		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "718 604" _null_ _null_ _null_ _null_	dist_cpoly _null_ _null_ _null_ ));
 DATA(insert OID = 729 (  poly_distance	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "604 604" _null_ _null_ _null_ _null_	poly_distance _null_ _null_ _null_ ));
 DATA(insert OID = 3590 (  dist_ppoly	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "600 604" _null_ _null_ _null_ _null_	dist_ppoly _null_ _null_ _null_ ));
+DATA(insert OID = 3587 (  dist_polyp	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "604 600" _null_ _null_ _null_ _null_	dist_polyp _null_ _null_ _null_ ));
+DATA(insert OID = 3585 (  dist_cpoint	   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 701 "718 600" _null_ _null_ _null_ _null_ 	dist_cpoint _null_ _null_ _null_ ));
 
 DATA(insert OID = 740 (  text_lt		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "25 25" _null_ _null_ _null_ _null_ text_lt _null_ _null_ _null_ ));
 DATA(insert OID = 741 (  text_le		   PGNSP PGUID 12 1 0 0 0 f f f f t f i 2 0 16 "25 25" _null_ _null_ _null_ _null_ text_le _null_ _null_ _null_ ));
@@ -4022,6 +4024,8 @@ DESCR("GiST support");
 DATA(insert OID = 2585 (  gist_poly_consistent	PGNSP PGUID 12 1 0 0 0 f f f f t f i 5 0 16 "2281 604 23 26 2281" _null_ _null_ _null_ _null_	gist_poly_consistent _null_ _null_ _null_ ));
 DESCR("GiST support");
 DATA(insert OID = 2586 (  gist_poly_compress	PGNSP PGUID 12 1 0 0 0 f f f f t f i 1 0 2281 "2281" _null_ _null_ _null_ _null_ gist_poly_compress _null_ _null_ _null_ ));
+DESCR("GiST support");
+DATA(insert OID = 3589 (  gist_inexact_distance	PGNSP PGUID 12 1 0 0 0 f f f f t f i 4 0 701 "2281 600 23 26" _null_ _null_ _null_ _null_	gist_inexact_distance _null_ _null_ _null_ ));
 DESCR("GiST support");
 DATA(insert OID = 2591 (  gist_circle_consistent PGNSP PGUID 12 1 0 0 0 f f f f t f i 5 0 16 "2281 718 23 26 2281" _null_ _null_ _null_ _null_	gist_circle_consistent _null_ _null_ _null_ ));
 DESCR("GiST support");

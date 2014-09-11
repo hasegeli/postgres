@@ -105,6 +105,7 @@
        <literal>~=</>
       </entry>
       <entry>
+       <literal>&lt;-&gt;</>
       </entry>
      </row>
      <row>
@@ -163,6 +164,7 @@
        <literal>~=</>
       </entry>
       <entry>
+       <literal>&lt;-&gt;</>
       </entry>
      </row>
      <row>
@@ -205,6 +207,12 @@
     </tbody>
    </tgroup>
   </table>
+
+ <para>
+  Currently, ordering by the distance operator <literal>&lt;-&gt;</>
+  is supported only with <literal>point</> by the operator classes
+  of the geometric types.
+ </para>
 
  <para>
   For historical reasons, the <literal>inet_ops</> operator class is
@@ -766,7 +774,7 @@ my_same(PG_FUNCTION_ARGS)
         The <acronym>SQL</> declaration of the function must look like this:
 
 <programlisting>
-CREATE OR REPLACE FUNCTION my_distance(internal, data_type, smallint, oid)
+CREATE OR REPLACE FUNCTION my_distance(internal, data_type, smallint, oid, internal)
 RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
@@ -785,6 +793,7 @@ my_distance(PG_FUNCTION_ARGS)
     data_type  *query = PG_GETARG_DATA_TYPE_P(1);
     StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
     /* Oid subtype = PG_GETARG_OID(3); */
+    bool       *recheck = (bool *) PG_GETARG_POINTER(4);
     data_type  *key = DatumGetDataType(entry-&gt;key);
     double      retval;
 
@@ -797,11 +806,16 @@ my_distance(PG_FUNCTION_ARGS)
 </programlisting>
 
        The arguments to the <function>distance</> function are identical to
-       the arguments of the <function>consistent</> function, except that no
-       recheck flag is used.  The distance to a leaf index entry must always
-       be determined exactly, since there is no way to re-order the tuples
-       once they are returned.  Some approximation is allowed when determining
-       the distance to an internal tree node, so long as the result is never
+       the arguments of the <function>consistent</> function.  When
+       <literal>recheck = true</> then value of distance will
+       be rechecked from heap tuple before tuple is returned.  If
+       <literal>recheck</> flag isn't set then it's true by default for
+       compatibility reasons.  The <literal>recheck</> flag can be used only
+       when ordering operator returns <type>float8</> value comparable with
+       result of <function>distance</> function.  Result of distance function
+       should be never greater than result of ordering operator.
+       Same approximation is allowed when determining the distance to an
+       internal tree node, so long as the result is never
        greater than any child's actual distance.  Thus, for example, distance
        to a bounding box is usually sufficient in geometric applications.  The
        result value can be any finite <type>float8</> value.  (Infinity and

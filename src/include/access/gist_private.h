@@ -16,7 +16,9 @@
 
 #include "access/gist.h"
 #include "access/itup.h"
+#include "executor/tuptable.h"
 #include "fmgr.h"
+#include "nodes/execnodes.h"
 #include "storage/bufmgr.h"
 #include "storage/buffile.h"
 #include "utils/rbtree.h"
@@ -135,6 +137,15 @@ typedef struct GISTSearchItem
 #define GISTSearchItemIsHeap(item)	((item).blkno == InvalidBlockNumber)
 
 /*
+ * KNN distance item: distance which can be rechecked from heap tuple.
+ */
+typedef struct GISTSearchTreeItemDistance
+{
+	double	value;
+	bool	recheck;
+} GISTSearchTreeItemDistance;
+
+/*
  * Within a GISTSearchTreeItem's chain, heap items always appear before
  * index-page items, since we want to visit heap items first.  lastHeap points
  * to the last heap item in the chain, or is NULL if there are none.
@@ -144,7 +155,7 @@ typedef struct GISTSearchTreeItem
 	RBNode		rbnode;			/* this is an RBTree item */
 	GISTSearchItem *head;		/* first chain member */
 	GISTSearchItem *lastHeap;	/* last heap-tuple member, if any */
-	double		distances[1];	/* array with numberOfOrderBys entries */
+	GISTSearchTreeItemDistance	distances[1];	/* array with numberOfOrderBys entries */
 } GISTSearchTreeItem;
 
 #define GSTIHDRSZ offsetof(GISTSearchTreeItem, distances)
@@ -164,12 +175,18 @@ typedef struct GISTScanOpaqueData
 
 	/* pre-allocated workspace arrays */
 	GISTSearchTreeItem *tmpTreeItem;	/* workspace to pass to rb_insert */
-	double	   *distances;		/* output area for gistindex_keytest */
+	GISTSearchTreeItemDistance *distances; /* output area for gistindex_keytest */
 
 	/* In a non-ordered search, returnable heap items are stored here: */
 	GISTSearchHeapItem pageData[BLCKSZ / sizeof(IndexTupleData)];
 	OffsetNumber nPageData;		/* number of valid items in array */
 	OffsetNumber curPageData;	/* next item to return */
+
+	/* Data structures for performing recheck of lossy knn distance */
+	FmgrInfo	*orderByRechecks;	/* functions for lossy knn distance recheck */
+	IndexInfo	*indexInfo;		/* index info for index tuple calculation */
+	TupleTableSlot *slot;		/* heap tuple slot */
+	EState		*estate;		/* executor state for index tuple calculation */
 } GISTScanOpaqueData;
 
 typedef GISTScanOpaqueData *GISTScanOpaque;
