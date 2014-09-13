@@ -241,7 +241,8 @@ gistindex_keytest(IndexScanDesc scan,
  * sibling will be processed next.
  */
 static void
-gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, GISTSearchTreeItemDistance *myDistances,
+gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem,
+			 GISTSearchTreeItemDistance *myDistances,
 			 TIDBitmap *tbm, int64 *ntids)
 {
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
@@ -397,12 +398,14 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, GISTSearchTreeItemDis
  * Do this tree item distance values needs recheck?
  */
 static bool
-searchTreeItemNeedDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *item)
+searchTreeItemNeedDistanceRecheck(IndexScanDesc scan)
 {
-	int i;
+	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
+	int 		i;
+
 	for (i = 0; i < scan->numberOfOrderBys; i++)
 	{
-		if (item->distances[i].recheck)
+		if (so->curTreeItem->distances[i].recheck)
 			return true;
 	}
 	return false;
@@ -412,15 +415,14 @@ searchTreeItemNeedDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *item)
  * Recheck distance values of item from heap and reinsert it into RB-tree.
  */
 static void
-searchTreeItemDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *treeItem,
-		GISTSearchItem *item)
+searchTreeItemDistanceRecheck(IndexScanDesc scan, GISTSearchItem *item)
 {
-	GISTScanOpaque		so = (GISTScanOpaque) scan->opaque;
+	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
 	GISTSearchTreeItem *tmpItem = so->tmpTreeItem;
-	Datum				values[INDEX_MAX_KEYS];
-	bool				isnull[INDEX_MAX_KEYS];
-	bool				isNew;
-	int					i;
+	Datum		values[INDEX_MAX_KEYS];
+	bool		isnull[INDEX_MAX_KEYS];
+	bool		isNew;
+	int			i;
 
 	/* Get index values from heap */
 	if (!index_get_heap_values(scan, &item->data.heap.heapPtr, values, isnull))
@@ -434,8 +436,9 @@ searchTreeItemDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *treeItem,
 	}
 
 	/* Prepare new tree item and reinsert it */
-	memcpy(tmpItem, treeItem, GSTIHDRSZ + sizeof(GISTSearchTreeItemDistance) *
-										  scan->numberOfOrderBys);
+	memcpy(tmpItem, so->curTreeItem, GSTIHDRSZ +
+									 sizeof(GISTSearchTreeItemDistance) *
+											scan->numberOfOrderBys);
 	tmpItem->head = item;
 	tmpItem->lastHeap = item;
 	item->next = NULL;
@@ -445,7 +448,7 @@ searchTreeItemDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *treeItem,
 		{
 			/* Re-calculate lossy distance */
 			ScanKey	key = scan->orderByData + i;
-			float8 	newDistance;
+			Datum	newDistance;
 
 			tmpItem->distances[i].recheck = false;
 			if (isnull[key->sk_attno - 1])
@@ -454,14 +457,12 @@ searchTreeItemDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *treeItem,
 				continue;
 			}
 
-			newDistance = DatumGetFloat8(
-				FunctionCall2Coll(&so->orderByRechecks[i],
-					 key->sk_collation,
-					 values[key->sk_attno - 1],
-					 key->sk_argument));
+			newDistance = FunctionCall2Coll(&so->orderByRechecks[i],
+											key->sk_collation,
+											values[key->sk_attno - 1],
+											key->sk_argument);
 
-			tmpItem->distances[i].value = newDistance;
-
+			tmpItem->distances[i].value = DatumGetFloat8(newDistance);
 		}
 	}
 	(void) rb_insert(so->queue, (RBNode *) tmpItem, &isNew);
@@ -504,9 +505,9 @@ getNextGISTSearchItem(IndexScanDesc scan)
 
 			/* Recheck distance from heap tuple if needed */
 			if (GISTSearchItemIsHeap(*item) &&
-				searchTreeItemNeedDistanceRecheck(scan, so->curTreeItem))
+				searchTreeItemNeedDistanceRecheck(scan))
 			{
-				searchTreeItemDistanceRecheck(scan, so->curTreeItem, item);
+				searchTreeItemDistanceRecheck(scan, item);
 				continue;
 			}
 			/* Return item; caller is responsible to pfree it */

@@ -34,7 +34,8 @@ GISTSearchTreeItemComparator(const RBNode *a, const RBNode *b, void *arg)
 	const GISTSearchTreeItem *sa = (const GISTSearchTreeItem *) a;
 	const GISTSearchTreeItem *sb = (const GISTSearchTreeItem *) b;
 	IndexScanDesc scan = (IndexScanDesc) arg;
-	int			i, recheckCmp = 0;
+	int			i,
+				recheckCmp = 0;
 
 	/* Order according to distance comparison */
 	for (i = 0; i < scan->numberOfOrderBys; i++)
@@ -149,8 +150,8 @@ gistbeginscan(PG_FUNCTION_ARGS)
 	if (scan->numberOfOrderBys > 0)
 	{
 		/* Functions for distance recheck from heap tuple */
-		so->orderByRechecks = (FmgrInfo *)palloc(sizeof(FmgrInfo)
-													* scan->numberOfOrderBys);
+		so->orderByRechecks = (FmgrInfo *) palloc(sizeof(FmgrInfo) *
+												  scan->numberOfOrderBys);
 	}
 
 	scan->opaque = so;
@@ -313,7 +314,7 @@ gistrescan(PG_FUNCTION_ARGS)
 					 RelationGetRelationName(scan->indexRelation));
 
 			/* Copy original sk_func for distance recheck from heap tuple */
-			fmgr_info_copy(&so->orderByRechecks[i], &(skey->sk_func),
+			fmgr_info_copy(&(so->orderByRechecks[i]), &(skey->sk_func),
 						   so->giststate->scanCxt);
 
 			fmgr_info_copy(&(skey->sk_func), finfo, so->giststate->scanCxt);
