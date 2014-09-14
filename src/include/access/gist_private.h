@@ -184,9 +184,6 @@ typedef struct GISTScanOpaqueData
 
 	/* Data structures for performing recheck of lossy knn distance */
 	FmgrInfo	*orderByRechecks;	/* functions for lossy knn distance recheck */
-	IndexInfo	*indexInfo;		/* index info for index tuple calculation */
-	TupleTableSlot *slot;		/* heap tuple slot */
-	EState		*estate;		/* executor state for index tuple calculation */
 } GISTScanOpaqueData;
 
 typedef GISTScanOpaqueData *GISTScanOpaque;

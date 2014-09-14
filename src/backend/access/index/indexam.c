@@ -69,6 +69,7 @@
 #include "access/transam.h"
 #include "access/xlog.h"
 
+#include "executor/executor.h"
 #include "catalog/index.h"
 #include "catalog/catalog.h"
 #include "pgstat.h"
@@ -254,6 +255,11 @@ index_beginscan(Relation heapRelation,
 	scan->heapRelation = heapRelation;
 	scan->xs_snapshot = snapshot;
 
+	/* Prepare data structures for getting original indexed values from heap */
+	scan->indexInfo = BuildIndexInfo(scan->indexRelation);
+	scan->estate = CreateExecutorState();
+	scan->slot = MakeSingleTupleTableSlot(RelationGetDescr(heapRelation));
+
 	return scan;
 }
 
@@ -376,6 +382,11 @@ index_endscan(IndexScanDesc scan)
 		ReleaseBuffer(scan->xs_cbuf);
 		scan->xs_cbuf = InvalidBuffer;
 	}
+
+	if (scan->slot)
+		ExecDropSingleTupleTableSlot(scan->slot);
+	if (scan->estate)
+		FreeExecutorState(scan->estate);
 
 	/* End the AM's scan */
 	FunctionCall1(procedure, PointerGetDatum(scan));
@@ -561,6 +572,49 @@ index_fetch_heap(IndexScanDesc scan)
 		scan->kill_prior_tuple = all_dead;
 
 	return NULL;
+}
+
+/* ----------------
+ *		index_get_heap_values - get original indexed values from heap
+ *
+ * Fetches heap tuple of heapPtr and calculated original indexed values.
+ * Returns true on success. Returns false when heap tuple wasn't found.
+ * Useful for indexes with lossy representation of keys.
+ * ----------------
+ */
+bool
+index_get_heap_values(IndexScanDesc scan, ItemPointer heapPtr,
+					Datum values[INDEX_MAX_KEYS], bool isnull[INDEX_MAX_KEYS])
+{
+	Buffer			buffer;
+	bool			got_heap_tuple, all_dead;
+	HeapTupleData	tup;
+
+	/* Get tuple from heap */
+	buffer = ReadBuffer(scan->heapRelation,
+											ItemPointerGetBlockNumber(heapPtr));
+	LockBuffer(buffer, BUFFER_LOCK_SHARE);
+	got_heap_tuple = heap_hot_search_buffer(heapPtr,
+											scan->heapRelation,
+											buffer,
+											scan->xs_snapshot,
+											&tup,
+											&all_dead,
+											true);
+	if (!got_heap_tuple)
+	{
+		/* Tuple not found: it has been deleted from heap. */
+		UnlockReleaseBuffer(buffer);
+		return false;
+	}
+
+	/* Calculate index datums */
+	ExecStoreTuple(heap_copytuple(&tup), scan->slot, InvalidBuffer, true);
+	FormIndexDatum(scan->indexInfo, scan->slot, scan->estate, values, isnull);
+
+	UnlockReleaseBuffer(buffer);
+
+	return true;
 }
 
 /* ----------------

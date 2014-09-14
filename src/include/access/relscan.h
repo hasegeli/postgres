@@ -19,6 +19,7 @@
 #include "access/htup_details.h"
 #include "access/itup.h"
 #include "access/tupdesc.h"
+#include "nodes/execnodes.h"
 
 
 typedef struct HeapScanDescData
@@ -93,6 +94,11 @@ typedef struct IndexScanDescData
 
 	/* state data for traversing HOT chains in index_getnext */
 	bool		xs_continue_hot;	/* T if must keep walking HOT chain */
+
+	/* Data structures for getting original indexed values from heap */
+	IndexInfo  *indexInfo;		/* index info for index tuple calculation */
+	TupleTableSlot *slot;		/* heap tuple slot */
+	EState	   *estate;		/* executor state for index tuple calculation */
 }	IndexScanDescData;
 
 /* Struct for heap-or-index scans of system tables */

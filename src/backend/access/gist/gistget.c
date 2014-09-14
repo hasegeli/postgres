@@ -415,41 +415,23 @@ static void
 searchTreeItemDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *treeItem,
 		GISTSearchItem *item)
 {
-	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
+	GISTScanOpaque		so = (GISTScanOpaque) scan->opaque;
 	GISTSearchTreeItem *tmpItem = so->tmpTreeItem;
-	Buffer	buffer;
-	bool	got_heap_tuple, all_dead;
-	HeapTupleData tup;
-	Datum	values[INDEX_MAX_KEYS];
-	bool	isnull[INDEX_MAX_KEYS];
-	bool	isNew;
-	int		i;
+	Datum				values[INDEX_MAX_KEYS];
+	bool				isnull[INDEX_MAX_KEYS];
+	bool				isNew;
+	int					i;
 
-	/* Get tuple from heap */
-	buffer = ReadBuffer(scan->heapRelation,
-			ItemPointerGetBlockNumber(&item->data.heap.heapPtr));
-	LockBuffer(buffer, BUFFER_LOCK_SHARE);
-	got_heap_tuple = heap_hot_search_buffer(&item->data.heap.heapPtr,
-											scan->heapRelation,
-											buffer,
-											scan->xs_snapshot,
-											&tup,
-											&all_dead,
-											true);
-	if (!got_heap_tuple)
+	/* Get index values from heap */
+	if (!index_get_heap_values(scan, &item->data.heap.heapPtr, values, isnull))
 	{
 		/*
 		 * Tuple not found: it has been deleted from heap.  We don't have to
 		 * reinsert it into RB-tree.
 		 */
-		UnlockReleaseBuffer(buffer);
 		pfree(item);
 		return;
 	}
-
-	/* Calculate index datums */
-	ExecStoreTuple(&tup, so->slot, InvalidBuffer, false);
-	FormIndexDatum(so->indexInfo, so->slot, so->estate, values, isnull);
 
 	/* Prepare new tree item and reinsert it */
 	memcpy(tmpItem, treeItem, GSTIHDRSZ + sizeof(GISTSearchTreeItemDistance) *
@@ -483,7 +465,6 @@ searchTreeItemDistanceRecheck(IndexScanDesc scan, GISTSearchTreeItem *treeItem,
 		}
 	}
 	(void) rb_insert(so->queue, (RBNode *) tmpItem, &isNew);
-	UnlockReleaseBuffer(buffer);
 }
 
 /*

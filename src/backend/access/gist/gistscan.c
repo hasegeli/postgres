@@ -148,12 +148,9 @@ gistbeginscan(PG_FUNCTION_ARGS)
 
 	if (scan->numberOfOrderBys > 0)
 	{
-		/* Prepare data structures for distance recheck from heap tuple */
-
+		/* Functions for distance recheck from heap tuple */
 		so->orderByRechecks = (FmgrInfo *)palloc(sizeof(FmgrInfo)
 													* scan->numberOfOrderBys);
-		so->indexInfo = BuildIndexInfo(scan->indexRelation);
-		so->estate = CreateExecutorState();
 	}
 
 	scan->opaque = so;
@@ -209,12 +206,6 @@ gistrescan(PG_FUNCTION_ARGS)
 		/* third or later time through */
 		MemoryContextReset(so->queueCxt);
 		first_time = false;
-	}
-
-	if (scan->numberOfOrderBys > 0 && !so->slot)
-	{
-		/* Prepare heap tuple slot for distance recheck */
-		so->slot = MakeSingleTupleTableSlot(RelationGetDescr(scan->heapRelation));
 	}
 
 	/* create new, empty RBTree for search queue */
@@ -358,9 +349,6 @@ gistendscan(PG_FUNCTION_ARGS)
 {
 	IndexScanDesc scan = (IndexScanDesc) PG_GETARG_POINTER(0);
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
-
-	if (so->slot)
-		ExecDropSingleTupleTableSlot(so->slot);
 
 	/*
 	 * freeGISTstate is enough to clean up everything made by gistbeginscan,
