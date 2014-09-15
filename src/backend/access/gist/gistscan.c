@@ -34,7 +34,7 @@ GISTSearchTreeItemComparator(const RBNode *a, const RBNode *b, void *arg)
 	const GISTSearchTreeItem *sa = (const GISTSearchTreeItem *) a;
 	const GISTSearchTreeItem *sb = (const GISTSearchTreeItem *) b;
 	IndexScanDesc scan = (IndexScanDesc) arg;
-	int			i;
+	int			i, recheckCmp = 0;
 
 	/* Order according to distance comparison */
 	for (i = 0; i < scan->numberOfOrderBys; i++)
@@ -46,14 +46,14 @@ GISTSearchTreeItemComparator(const RBNode *a, const RBNode *b, void *arg)
 			return (distance_a.value > distance_b.value) ? 1 : -1;
 
 		/*
-		 * Items without recheck can be immediately returned.  So they are
-		 * placed first.
+		 * When all distance values are the same, items without recheck
+		 * can be immediately returned.  So they are placed first.
 		 */
-		if (distance_a.recheck != distance_b.recheck)
-			return distance_a.recheck ? 1 : -1;
+		if (recheckCmp == 0 && distance_a.recheck != distance_b.recheck)
+			recheckCmp = distance_a.recheck ? 1 : -1;
 	}
 
-	return 0;
+	return recheckCmp;
 }
 
 static void
