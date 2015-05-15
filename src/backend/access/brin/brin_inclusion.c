@@ -367,7 +367,8 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 		case RTContainsStrategyNumber:
 		case RTOldContainsStrategyNumber:
 		case RTContainsElemStrategyNumber:
-		case RTContainsNotEqualStrategyNumber:
+		case RTSubStrategyNumber:
+		case RTSubEqualStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													key->sk_strategy);
 			result = FunctionCall2Coll(finfo, colloid, unionval, query);
@@ -386,7 +387,8 @@ brin_inclusion_consistent(PG_FUNCTION_ARGS)
 
 		case RTContainedByStrategyNumber:
 		case RTOldContainedByStrategyNumber:
-		case RTContainedByNotEqualStrategyNumber:
+		case RTSuperStrategyNumber:
+		case RTSuperEqualStrategyNumber:
 			finfo = inclusion_get_strategy_procinfo(bdesc, attno, subtype,
 													RTOverlapStrategyNumber);
 			result = FunctionCall2Coll(finfo, colloid, unionval, query);

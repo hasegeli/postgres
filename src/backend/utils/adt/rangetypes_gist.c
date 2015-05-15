@@ -786,30 +786,30 @@ range_gist_consistent_int(TypeCacheEntry *typcache, StrategyNumber strategy,
 {
 	switch (strategy)
 	{
-		case RANGESTRAT_BEFORE:
+		case RTLeftStrategyNumber:
 			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeType(query)))
 				return false;
 			return (!range_overright_internal(typcache, key,
 											  DatumGetRangeType(query)));
-		case RANGESTRAT_OVERLEFT:
+		case RTOverLeftStrategyNumber:
 			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeType(query)))
 				return false;
 			return (!range_after_internal(typcache, key,
 										  DatumGetRangeType(query)));
-		case RANGESTRAT_OVERLAPS:
+		case RTOverlapStrategyNumber:
 			return range_overlaps_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_OVERRIGHT:
+		case RTOverRightStrategyNumber:
 			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeType(query)))
 				return false;
 			return (!range_before_internal(typcache, key,
 										   DatumGetRangeType(query)));
-		case RANGESTRAT_AFTER:
+		case RTRightStrategyNumber:
 			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeType(query)))
 				return false;
 			return (!range_overleft_internal(typcache, key,
 											 DatumGetRangeType(query)));
-		case RANGESTRAT_ADJACENT:
+		case RTAdjacentStrategyNumber:
 			if (RangeIsEmpty(key) || RangeIsEmpty(DatumGetRangeType(query)))
 				return false;
 			if (range_adjacent_internal(typcache, key,
@@ -817,10 +817,10 @@ range_gist_consistent_int(TypeCacheEntry *typcache, StrategyNumber strategy,
 				return true;
 			return range_overlaps_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_CONTAINS:
+		case RTContainsStrategyNumber:
 			return range_contains_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_CONTAINED_BY:
+		case RTContainedByStrategyNumber:
 
 			/*
 			 * Empty ranges are contained by anything, so if key is or
@@ -831,9 +831,9 @@ range_gist_consistent_int(TypeCacheEntry *typcache, StrategyNumber strategy,
 				return true;
 			return range_overlaps_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_CONTAINS_ELEM:
+		case RTContainsElemStrategyNumber:
 			return range_contains_elem_internal(typcache, key, query);
-		case RANGESTRAT_EQ:
+		case RTEqualStrategyNumber:
 
 			/*
 			 * If query is empty, descend only if the key is or contains any
@@ -858,33 +858,33 @@ range_gist_consistent_leaf(TypeCacheEntry *typcache, StrategyNumber strategy,
 {
 	switch (strategy)
 	{
-		case RANGESTRAT_BEFORE:
+		case RTLeftStrategyNumber:
 			return range_before_internal(typcache, key,
 										 DatumGetRangeType(query));
-		case RANGESTRAT_OVERLEFT:
+		case RTOverLeftStrategyNumber:
 			return range_overleft_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_OVERLAPS:
+		case RTOverlapStrategyNumber:
 			return range_overlaps_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_OVERRIGHT:
+		case RTOverRightStrategyNumber:
 			return range_overright_internal(typcache, key,
 											DatumGetRangeType(query));
-		case RANGESTRAT_AFTER:
+		case RTRightStrategyNumber:
 			return range_after_internal(typcache, key,
 										DatumGetRangeType(query));
-		case RANGESTRAT_ADJACENT:
+		case RTAdjacentStrategyNumber:
 			return range_adjacent_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_CONTAINS:
+		case RTContainsStrategyNumber:
 			return range_contains_internal(typcache, key,
 										   DatumGetRangeType(query));
-		case RANGESTRAT_CONTAINED_BY:
+		case RTContainedByStrategyNumber:
 			return range_contained_by_internal(typcache, key,
 											   DatumGetRangeType(query));
-		case RANGESTRAT_CONTAINS_ELEM:
+		case RTContainsElemStrategyNumber:
 			return range_contains_elem_internal(typcache, key, query);
-		case RANGESTRAT_EQ:
+		case RTEqualStrategyNumber:
 			return range_eq_internal(typcache, key, DatumGetRangeType(query));
 		default:
 			elog(ERROR, "unrecognized range strategy: %d", strategy);

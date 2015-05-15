@@ -51,21 +51,6 @@
 #include "access/skey.h"
 #include "utils/inet.h"
 
-/*
- * Operator strategy numbers used in the GiST inet_ops opclass
- */
-#define INETSTRAT_OVERLAPS		RTOverlapStrategyNumber
-#define INETSTRAT_EQ			RTEqualStrategyNumber
-#define INETSTRAT_NE			RTNotEqualStrategyNumber
-#define INETSTRAT_LT			RTLessStrategyNumber
-#define INETSTRAT_LE			RTLessEqualStrategyNumber
-#define INETSTRAT_GT			RTGreaterStrategyNumber
-#define INETSTRAT_GE			RTGreaterEqualStrategyNumber
-#define INETSTRAT_SUB			RTContainsNotEqualStrategyNumber
-#define INETSTRAT_SUBEQ			25
-#define INETSTRAT_SUP			26
-#define INETSTRAT_SUPEQ			27
-
 
 /*
  * Representation of a GiST INET/CIDR index key.  This is not identical to
@@ -146,19 +131,19 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 	{
 		switch (strategy)
 		{
-			case INETSTRAT_LT:
-			case INETSTRAT_LE:
+			case RTLessStrategyNumber:
+			case RTLessEqualStrategyNumber:
 				if (gk_ip_family(key) < ip_family(query))
 					PG_RETURN_BOOL(true);
 				break;
 
-			case INETSTRAT_GE:
-			case INETSTRAT_GT:
+			case RTGreaterEqualStrategyNumber:
+			case RTGreaterStrategyNumber:
 				if (gk_ip_family(key) > ip_family(query))
 					PG_RETURN_BOOL(true);
 				break;
 
-			case INETSTRAT_NE:
+			case RTNotEqualStrategyNumber:
 				PG_RETURN_BOOL(true);
 		}
 		/* For all other cases, we can be sure there is no match */
@@ -175,23 +160,23 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 	 */
 	switch (strategy)
 	{
-		case INETSTRAT_SUB:
+		case RTSubStrategyNumber:
 			if (GIST_LEAF(ent) && gk_ip_minbits(key) <= ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
 
-		case INETSTRAT_SUBEQ:
+		case RTSubEqualStrategyNumber:
 			if (GIST_LEAF(ent) && gk_ip_minbits(key) < ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
 
-		case INETSTRAT_SUPEQ:
-		case INETSTRAT_EQ:
+		case RTSuperEqualStrategyNumber:
+		case RTEqualStrategyNumber:
 			if (gk_ip_minbits(key) > ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
 
-		case INETSTRAT_SUP:
+		case RTSuperStrategyNumber:
 			if (gk_ip_minbits(key) >= ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
@@ -216,37 +201,37 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 
 	switch (strategy)
 	{
-		case INETSTRAT_SUB:
-		case INETSTRAT_SUBEQ:
-		case INETSTRAT_OVERLAPS:
-		case INETSTRAT_SUPEQ:
-		case INETSTRAT_SUP:
+		case RTSubStrategyNumber:
+		case RTSubEqualStrategyNumber:
+		case RTOverlapStrategyNumber:
+		case RTSuperEqualStrategyNumber:
+		case RTSuperStrategyNumber:
 			PG_RETURN_BOOL(order == 0);
 
-		case INETSTRAT_LT:
-		case INETSTRAT_LE:
+		case RTLessStrategyNumber:
+		case RTLessEqualStrategyNumber:
 			if (order > 0)
 				PG_RETURN_BOOL(false);
 			if (order < 0 || !GIST_LEAF(ent))
 				PG_RETURN_BOOL(true);
 			break;
 
-		case INETSTRAT_EQ:
+		case RTEqualStrategyNumber:
 			if (order != 0)
 				PG_RETURN_BOOL(false);
 			if (!GIST_LEAF(ent))
 				PG_RETURN_BOOL(true);
 			break;
 
-		case INETSTRAT_GE:
-		case INETSTRAT_GT:
+		case RTGreaterEqualStrategyNumber:
+		case RTGreaterStrategyNumber:
 			if (order < 0)
 				PG_RETURN_BOOL(false);
 			if (order > 0 || !GIST_LEAF(ent))
 				PG_RETURN_BOOL(true);
 			break;
 
-		case INETSTRAT_NE:
+		case RTNotEqualStrategyNumber:
 			if (order != 0 || !GIST_LEAF(ent))
 				PG_RETURN_BOOL(true);
 			break;
@@ -267,28 +252,28 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 	 */
 	switch (strategy)
 	{
-		case INETSTRAT_LT:
-		case INETSTRAT_LE:
+		case RTLessStrategyNumber:
+		case RTLessEqualStrategyNumber:
 			if (gk_ip_minbits(key) < ip_bits(query))
 				PG_RETURN_BOOL(true);
 			if (gk_ip_minbits(key) > ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
 
-		case INETSTRAT_EQ:
+		case RTEqualStrategyNumber:
 			if (gk_ip_minbits(key) != ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
 
-		case INETSTRAT_GE:
-		case INETSTRAT_GT:
+		case RTGreaterEqualStrategyNumber:
+		case RTGreaterStrategyNumber:
 			if (gk_ip_minbits(key) > ip_bits(query))
 				PG_RETURN_BOOL(true);
 			if (gk_ip_minbits(key) < ip_bits(query))
 				PG_RETURN_BOOL(false);
 			break;
 
-		case INETSTRAT_NE:
+		case RTNotEqualStrategyNumber:
 			if (gk_ip_minbits(key) != ip_bits(query))
 				PG_RETURN_BOOL(true);
 			break;
@@ -303,22 +288,22 @@ inet_gist_consistent(PG_FUNCTION_ARGS)
 
 	switch (strategy)
 	{
-		case INETSTRAT_LT:
+		case RTLessStrategyNumber:
 			PG_RETURN_BOOL(order < 0);
 
-		case INETSTRAT_LE:
+		case RTLessEqualStrategyNumber:
 			PG_RETURN_BOOL(order <= 0);
 
-		case INETSTRAT_EQ:
+		case RTEqualStrategyNumber:
 			PG_RETURN_BOOL(order == 0);
 
-		case INETSTRAT_GE:
+		case RTGreaterEqualStrategyNumber:
 			PG_RETURN_BOOL(order >= 0);
 
-		case INETSTRAT_GT:
+		case RTGreaterStrategyNumber:
 			PG_RETURN_BOOL(order > 0);
 
-		case INETSTRAT_NE:
+		case RTNotEqualStrategyNumber:
 			PG_RETURN_BOOL(order != 0);
 	}
 

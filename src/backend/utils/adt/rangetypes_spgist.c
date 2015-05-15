@@ -352,9 +352,9 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 			/*
 			 * The only strategy when second argument of operator is not range
-			 * is RANGESTRAT_CONTAINS_ELEM.
+			 * is RTContainsElemStrategyNumber.
 			 */
-			if (strategy != RANGESTRAT_CONTAINS_ELEM)
+			if (strategy != RTContainsElemStrategyNumber)
 				empty = RangeIsEmpty(
 							 DatumGetRangeType(in->scankeys[i].sk_argument));
 			else
@@ -362,12 +362,12 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 			switch (strategy)
 			{
-				case RANGESTRAT_BEFORE:
-				case RANGESTRAT_OVERLEFT:
-				case RANGESTRAT_OVERLAPS:
-				case RANGESTRAT_OVERRIGHT:
-				case RANGESTRAT_AFTER:
-				case RANGESTRAT_ADJACENT:
+				case RTLeftStrategyNumber:
+				case RTOverLeftStrategyNumber:
+				case RTOverlapStrategyNumber:
+				case RTOverRightStrategyNumber:
+				case RTRightStrategyNumber:
+				case RTAdjacentStrategyNumber:
 					/* These strategies return false if any argument is empty */
 					if (empty)
 						which = 0;
@@ -375,7 +375,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 						which &= (1 << 2);
 					break;
 
-				case RANGESTRAT_CONTAINS:
+				case RTContainsStrategyNumber:
 
 					/*
 					 * All ranges contain an empty range. Only non-empty
@@ -385,7 +385,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 						which &= (1 << 2);
 					break;
 
-				case RANGESTRAT_CONTAINED_BY:
+				case RTContainedByStrategyNumber:
 
 					/*
 					 * Only an empty range is contained by an empty range.
@@ -396,11 +396,11 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 						which &= (1 << 1);
 					break;
 
-				case RANGESTRAT_CONTAINS_ELEM:
+				case RTContainsElemStrategyNumber:
 					which &= (1 << 2);
 					break;
 
-				case RANGESTRAT_EQ:
+				case RTEqualStrategyNumber:
 					if (empty)
 						which &= (1 << 1);
 					else
@@ -468,12 +468,12 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 			strategy = in->scankeys[i].sk_strategy;
 
 			/*
-			 * RANGESTRAT_CONTAINS_ELEM is just like RANGESTRAT_CONTAINS, but
+			 * RTContainsElemStrategyNumber is just like RTContainsStrategyNumber, but
 			 * the argument is a single element. Expand the single element to
 			 * a range containing only the element, and treat it like
-			 * RANGESTRAT_CONTAINS.
+			 * RTContainsStrategyNumber.
 			 */
-			if (strategy == RANGESTRAT_CONTAINS_ELEM)
+			if (strategy == RTContainsElemStrategyNumber)
 			{
 				lower.inclusive = true;
 				lower.infinite = false;
@@ -487,7 +487,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 				empty = false;
 
-				strategy = RANGESTRAT_CONTAINS;
+				strategy = RTContainsStrategyNumber;
 			}
 			else
 			{
@@ -508,7 +508,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 			 */
 			switch (strategy)
 			{
-				case RANGESTRAT_BEFORE:
+				case RTLeftStrategyNumber:
 
 					/*
 					 * Range A is before range B if upper bound of A is lower
@@ -518,7 +518,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					inclusive = false;
 					break;
 
-				case RANGESTRAT_OVERLEFT:
+				case RTOverLeftStrategyNumber:
 
 					/*
 					 * Range A is overleft to range B if upper bound of A is
@@ -527,7 +527,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					maxUpper = &upper;
 					break;
 
-				case RANGESTRAT_OVERLAPS:
+				case RTOverlapStrategyNumber:
 
 					/*
 					 * Non-empty ranges overlap, if lower bound of each range
@@ -537,7 +537,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					minUpper = &lower;
 					break;
 
-				case RANGESTRAT_OVERRIGHT:
+				case RTOverRightStrategyNumber:
 
 					/*
 					 * Range A is overright to range B if lower bound of A is
@@ -546,7 +546,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					minLower = &lower;
 					break;
 
-				case RANGESTRAT_AFTER:
+				case RTRightStrategyNumber:
 
 					/*
 					 * Range A is after range B if lower bound of A is greater
@@ -556,7 +556,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					inclusive = false;
 					break;
 
-				case RANGESTRAT_ADJACENT:
+				case RTAdjacentStrategyNumber:
 					if (empty)
 						break;	/* Skip to strictEmpty check. */
 
@@ -613,7 +613,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					needPrevious = true;
 					break;
 
-				case RANGESTRAT_CONTAINS:
+				case RTContainsStrategyNumber:
 
 					/*
 					 * Non-empty range A contains non-empty range B if lower
@@ -632,7 +632,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					}
 					break;
 
-				case RANGESTRAT_CONTAINED_BY:
+				case RTContainedByStrategyNumber:
 					/* The opposite of contains. */
 					strictEmpty = false;
 					if (empty)
@@ -647,7 +647,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 					}
 					break;
 
-				case RANGESTRAT_EQ:
+				case RTEqualStrategyNumber:
 
 					/*
 					 * Equal range can be only in the same quadrant where
@@ -933,43 +933,43 @@ spg_range_quad_leaf_consistent(PG_FUNCTION_ARGS)
 		/* Call the function corresponding to the scan strategy */
 		switch (in->scankeys[i].sk_strategy)
 		{
-			case RANGESTRAT_BEFORE:
+			case RTLeftStrategyNumber:
 				res = range_before_internal(typcache, leafRange,
 											DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_OVERLEFT:
+			case RTOverLeftStrategyNumber:
 				res = range_overleft_internal(typcache, leafRange,
 											  DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_OVERLAPS:
+			case RTOverlapStrategyNumber:
 				res = range_overlaps_internal(typcache, leafRange,
 											  DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_OVERRIGHT:
+			case RTOverRightStrategyNumber:
 				res = range_overright_internal(typcache, leafRange,
 											   DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_AFTER:
+			case RTRightStrategyNumber:
 				res = range_after_internal(typcache, leafRange,
 										   DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_ADJACENT:
+			case RTAdjacentStrategyNumber:
 				res = range_adjacent_internal(typcache, leafRange,
 											  DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_CONTAINS:
+			case RTContainsStrategyNumber:
 				res = range_contains_internal(typcache, leafRange,
 											  DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_CONTAINED_BY:
+			case RTContainedByStrategyNumber:
 				res = range_contained_by_internal(typcache, leafRange,
 												DatumGetRangeType(keyDatum));
 				break;
-			case RANGESTRAT_CONTAINS_ELEM:
+			case RTContainsElemStrategyNumber:
 				res = range_contains_elem_internal(typcache, leafRange,
 												   keyDatum);
 				break;
-			case RANGESTRAT_EQ:
+			case RTEqualStrategyNumber:
 				res = range_eq_internal(typcache, leafRange,
 										DatumGetRangeType(keyDatum));
 				break;
