@@ -6,6 +6,7 @@
 #include "trgm.h"
 
 #include "access/stratnum.h"
+#include "fmgr.h"
 
 
 typedef struct

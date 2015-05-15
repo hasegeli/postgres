@@ -430,7 +430,7 @@ typedef struct xl_btree_newroot
 
 
 /*
- *	Operator strategy numbers for B-tree have been moved to access/skey.h,
+ *	Operator strategy numbers for B-tree have been moved to access/stratnum.h,
  *	because many places need to use them in ScanKeyInit() calls.
  *
  *	The strategy numbers are chosen so that we can commute them by
@@ -639,7 +639,7 @@ typedef BTScanOpaqueData *BTScanOpaque;
 
 /*
  * We use some private sk_flags bits in preprocessed scan keys.  We're allowed
- * to use bits 16-31 (see skey.h).  The uppermost bits are copied from the
+ * to use bits 16-31 (see stratnum.h).  The uppermost bits are copied from the
  * index's indoption[] array entry for the index attribute.
  */
 #define SK_BT_REQFWD	0x00010000		/* required to continue forward scan */

@@ -13,6 +13,7 @@
 
 #include "access/gist.h"
 #include "access/stratnum.h"
+#include "fmgr.h"
 
 #include "segdata.h"
 
