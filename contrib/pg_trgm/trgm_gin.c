@@ -6,7 +6,7 @@
 #include "trgm.h"
 
 #include "access/gin.h"
-#include "access/skey.h"
+#include "access/stratnum.h"
 
 
 PG_FUNCTION_INFO_V1(gin_extract_trgm);
