@@ -42,11 +42,12 @@
  * Procedure numbers must not use values reserved for BRIN itself; see
  * brin_internal.h.
  */
-#define		INCLUSION_MAX_PROCNUMS	4	/* maximum support procs we need */
+#define		INCLUSION_MAX_PROCNUMS	5	/* maximum support procs we need */
 #define		PROCNUM_MERGE			11	/* required */
 #define		PROCNUM_MERGEABLE		12	/* optional */
 #define		PROCNUM_CONTAINS		13	/* optional */
 #define		PROCNUM_EMPTY			14	/* optional */
+#define		PROCNUM_CAST			15	/* optional */
 
 
 /*
@@ -168,8 +169,13 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 	 */
 	if (column->bv_allnulls)
 	{
-		column->bv_values[INCLUSION_UNION] =
-			datumCopy(newval, attr->attbyval, attr->attlen);
+		finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_CAST);
+		if (finfo != NULL)
+			column->bv_values[INCLUSION_UNION] =
+				FunctionCall1Coll(finfo, colloid, newval);
+		else
+			column->bv_values[INCLUSION_UNION] =
+				datumCopy(newval, attr->attbyval, attr->attlen);
 		column->bv_values[INCLUSION_UNMERGEABLE] = BoolGetDatum(false);
 		column->bv_values[INCLUSION_CONTAINS_EMPTY] = BoolGetDatum(false);
 		column->bv_allnulls = false;
@@ -210,6 +216,11 @@ brin_inclusion_add_value(PG_FUNCTION_ARGS)
 									   column->bv_values[INCLUSION_UNION],
 									   newval)))
 		PG_RETURN_BOOL(false);
+
+	/* Cast the new value, to match the storage type. */
+	finfo = inclusion_get_procinfo(bdesc, attno, PROCNUM_CAST);
+	if (finfo != NULL)
+		newval = FunctionCall1Coll(finfo, colloid, newval);
 
 	/*
 	 * Check if the new value is mergeable to the existing union.  If it is
