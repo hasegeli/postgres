@@ -1114,6 +1114,23 @@ DATA(insert (	4104	603  603 10 s	  2570	  3580 0 ));
 DATA(insert (	4104	603  603 11 s	  2573	  3580 0 ));
 DATA(insert (	4104	603  603 12 s	  2572	  3580 0 ));
 /* we could, but choose not to, supply entries for strategies 13 and 14 */
-DATA(insert (	4104	603  600  7 s	   433	  3580 0 ));
+DATA(insert (	4104    603  600  1 s     4192    3580 0 ));
+DATA(insert (	4104    603  600  2 s     4193    3580 0 ));
+DATA(insert (	4104    603  600  3 s     4200    3580 0 ));
+DATA(insert (	4104    603  600  4 s     4195    3580 0 ));
+DATA(insert (	4104    603  600  5 s     4194    3580 0 ));
+DATA(insert (	4104    603  600  7 s	   433	  3580 0 ));
+DATA(insert (	4104    603  600  9 s     4197    3580 0 ));
+DATA(insert (	4104    603  600 10 s     4196    3580 0 ));
+DATA(insert (	4104    603  600 11 s     4198    3580 0 ));
+DATA(insert (	4104    603  600 12 s     4199    3580 0 ));
+/* inclusion point */
+DATA(insert (	4104    600  600  1 s      507    3580 0 ));
+DATA(insert (	4104    600  600  5 s      508    3580 0 ));
+DATA(insert (	4104    600  600  6 s      510    3580 0 ));
+DATA(insert (	4104    600  600 10 s      509    3580 0 ));
+DATA(insert (	4104    600  600 11 s      506    3580 0 ));
+DATA(insert (	4104    600  603  3 s     4201    3580 0 ));
+DATA(insert (	4104    600  603  8 s      511    3580 0 ));
 
 #endif   /* PG_AMOP_H */

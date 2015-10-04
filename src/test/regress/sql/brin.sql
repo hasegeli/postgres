@@ -25,7 +25,8 @@ CREATE TABLE brintest (byteacol bytea,
 	uuidcol uuid,
 	int4rangecol int4range,
 	lsncol pg_lsn,
-	boxcol box
+	boxcol box,
+	pointcol point
 ) WITH (fillfactor=10);
 
 INSERT INTO brintest SELECT
@@ -55,7 +56,8 @@ INSERT INTO brintest SELECT
 	format('%s%s-%s-%s-%s-%s%s%s', to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'))::uuid,
 	int4range(thousand, twothousand),
 	format('%s/%s%s', odd, even, tenthous)::pg_lsn,
-	box(point(odd, even), point(thousand, twothousand))
+	box(point(odd, even), point(thousand, twothousand)),
+	point(odd, even)
 FROM tenk1 ORDER BY unique2 LIMIT 100;
 
 -- throw in some NULL's and different values
@@ -95,7 +97,8 @@ CREATE INDEX brinidx ON brintest USING brin (
 	uuidcol,
 	int4rangecol,
 	lsncol,
-	boxcol
+	boxcol,
+	pointcol
 ) with (pages_per_range = 1);
 
 CREATE TABLE brinopers (colname name, typ text,
@@ -281,13 +284,21 @@ INSERT INTO brinopers VALUES
 	 '{0/1200, 0/1200, 44/455222, 198/1999799, 198/1999799, NULL, NULL}',
 	 '{100, 100, 1, 100, 100, 25, 100}'),
 	('boxcol', 'point',
-	 '{@>}',
-	 '{"(500,43)"}',
-	 '{11}'),
+	 '{<<, &<, &&, &>, >>, <<|, &<|, |&>, |>>, @>}',
+	 '{"(10000,10000)", "(10000,10000)", "(3,4)", "(0,0)", "(0,0)", "(100000,100000)", "(100000,100000)", "(0,0)", "(0,0)", "(50,50)"}',
+	 '{100, 100, 4, 100, 99, 100, 100, 100, 100, 30}'),
 	('boxcol', 'box',
 	 '{<<, &<, &&, &>, >>, <<|, &<|, |&>, |>>, @>, <@, ~=}',
 	 '{"((1000,2000),(3000,4000))","((1,2),(3000,4000))","((1,2),(3000,4000))","((1,2),(3000,4000))","((1,2),(3,4))","((1000,2000),(3000,4000))","((1,2000),(3,4000))","((1000,2),(3000,4))","((1,2),(3,4))","((1,2),(300,400))","((1,2),(3000,4000))","((222,1222),(44,45))"}',
-	 '{100, 100, 100, 99, 96, 100, 100, 99, 96, 1, 99, 1}');
+	 '{100, 100, 100, 99, 96, 100, 100, 99, 96, 1, 99, 1}'),
+	('pointcol', 'point',
+	 '{<<, >>, <^, >^, ~=}',
+	 '{"(3000,4000)", "(0,0)", "(3000,4000)", "(0,0)", "(0,1)"}',
+	 '{100, 99, 100, 100, 1}'),
+	('pointcol', 'box',
+	 '{<@,&&}',
+	 '{"((0,0),(50000,1000000))", "((0,0),(50000,1000000))"}',
+	 '{100, 100}');
 
 DO $x$
 DECLARE
@@ -409,8 +420,9 @@ INSERT INTO brintest SELECT
 	format('%s%s-%s-%s-%s-%s%s%s', to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'), to_char(tenthous, 'FM0000'))::uuid,
 	int4range(thousand, twothousand),
 	format('%s/%s%s', odd, even, tenthous)::pg_lsn,
-	box(point(odd, even), point(thousand, twothousand))
-FROM tenk1 ORDER BY unique2 LIMIT 5 OFFSET 5;
+	box(point(odd, even), point(thousand, twothousand)),
+	point(odd, even)
+FROM tenk1 ORDER BY unique2 LIMIT 10 OFFSET 5;
 
 VACUUM brintest;  -- force a summarization cycle in brinidx
 

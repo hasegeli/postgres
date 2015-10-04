@@ -1851,6 +1851,7 @@ setup_description(void)
 				"    'implementation of ' || oprname || ' operator' "
 				"  FROM funcdescs "
 				"  WHERE opdesc NOT LIKE 'deprecated%' AND "
+				"  opdesc NOT LIKE 'same as %' AND "
 				"  NOT EXISTS (SELECT 1 FROM pg_description "
 		  "    WHERE objoid = p_oid AND classoid = 'pg_proc'::regclass);\n");
 

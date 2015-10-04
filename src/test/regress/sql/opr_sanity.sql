@@ -640,7 +640,7 @@ WHERE d.classoid IS NULL AND p1.oid <= 9999;
 -- put such comments into pg_proc.h; initdb will generate them as needed.)
 -- In some cases involving legacy names for operators, there are multiple
 -- operators referencing the same pg_proc entry, so ignore operators whose
--- comments say they are deprecated.
+-- comments say they are deprecated or same as other operator.
 -- We also have a few functions that are both operator support and meant to
 -- be called directly; those should have comments matching their operator.
 WITH funcdescs AS (
@@ -654,6 +654,7 @@ WITH funcdescs AS (
 SELECT * FROM funcdescs
   WHERE prodesc IS DISTINCT FROM expecteddesc
     AND oprdesc NOT LIKE 'deprecated%'
+    AND oprdesc NOT LIKE 'same as %'
     AND prodesc IS DISTINCT FROM oprdesc;
 
 -- Show all the operator-implementation functions that have their own
@@ -671,6 +672,7 @@ WITH funcdescs AS (
 SELECT p_oid, proname, prodesc FROM funcdescs
   WHERE prodesc IS DISTINCT FROM expecteddesc
     AND oprdesc NOT LIKE 'deprecated%'
+    AND oprdesc NOT LIKE 'same as %'
 ORDER BY 1;
 
 

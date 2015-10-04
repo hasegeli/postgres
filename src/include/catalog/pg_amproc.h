@@ -659,5 +659,13 @@ DATA(insert (	4104   603	 603  3  4107 ));
 DATA(insert (	4104   603	 603  4  4108 ));
 DATA(insert (	4104   603	 603  11 4067 ));
 DATA(insert (	4104   603	 603  13  187 ));
+/* inclusion point */
+DATA(insert (	4104   600	 600  1  4105 ));
+DATA(insert (	4104   600	 600  2  4106 ));
+DATA(insert (	4104   600	 600  3  4107 ));
+DATA(insert (	4104   600	 600  4  4108 ));
+DATA(insert (	4104   600	 600  11 4067 ));
+DATA(insert (	4104   600	 600  13  193 ));
+DATA(insert (	4104   600	 600  15 4091 ));
 
 #endif   /* PG_AMPROC_H */
