@@ -100,8 +100,10 @@
 #include <ctype.h>
 #include <math.h>
 
+#include "access/brin.h"
 #include "access/gin.h"
 #include "access/htup_details.h"
+#include "access/reloptions.h"
 #include "access/sysattr.h"
 #include "catalog/index.h"
 #include "catalog/pg_am.h"
@@ -7526,14 +7528,21 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 {
 	IndexOptInfo *index = path->indexinfo;
 	List	   *indexQuals = path->indexquals;
-	List	   *indexOrderBys = path->indexorderbys;
 	double		numPages = index->pages;
 	double		numTuples = index->tuples;
+	RelOptInfo *baserel = index->rel;
 	List	   *qinfos;
 	Cost		spc_seq_page_cost;
 	Cost		spc_random_page_cost;
 	double		qual_op_cost;
 	double		qual_arg_cost;
+	double		qualSelectivity,
+				blockProportion,
+				numBlocks,
+				blockSelectivity,
+				selec;
+	Relation	indexRel;
+	VariableStatData vardata;
 
 	/* Do preliminary analysis of indexquals */
 	qinfos = deconstruct_indexquals(path);
@@ -7547,6 +7556,8 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 * BRIN indexes are always read in full; use that as startup cost.
 	 *
 	 * XXX maybe only include revmap pages here?
+	 * XXX we should consider the revmap at seqpage cost, and regular pages
+	 * at random page cost.
 	 */
 	*indexStartupCost = spc_seq_page_cost * numPages * loop_count;
 
@@ -7557,23 +7568,191 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 	 */
 	*indexTotalCost = spc_random_page_cost * numPages * loop_count;
 
-	*indexSelectivity =
-		clauselist_selectivity(root, indexQuals,
-							   path->indexinfo->rel->relid,
-							   JOIN_INNER, NULL);
-	*indexCorrelation = 1;
+	/*
+	 * Compute index correlation.
+	 *
+	 * Because we can use all index quals equally when scanning, we can use the
+	 * largest correlation (in absolute value) among columns used by the query.
+	 * Start at zero, the worst possible case.
+	 */
+	*indexCorrelation = 0;
+
+	{
+		RangeTblEntry *rte = planner_rt_fetch(index->rel->relid, root);
+		Oid			relid;
+		ListCell   *cell;
+
+		Assert(rte->rtekind == RTE_RELATION);
+		relid = rte->relid;
+		Assert(relid != InvalidOid);
+
+		foreach (cell, qinfos)
+		{
+			IndexQualInfo  *qinfo = (IndexQualInfo *) lfirst(cell);
+			AttrNumber		colnum = index->indexkeys[qinfo->indexcol];
+
+			if (colnum != 0)
+			{
+				/* Simple variable -- look to stats for the underlying table */
+				if (get_relation_stats_hook &&
+					(*get_relation_stats_hook) (root, rte, colnum, &vardata))
+				{
+					/*
+					 * The hook took control of acquiring a stats tuple.  If it did
+					 * supply a tuple, it'd better have supplied a freefunc.
+					 */
+					if (HeapTupleIsValid(vardata.statsTuple) &&
+						!vardata.freefunc)
+						elog(ERROR, "no function provided to release variable stats with");
+				}
+				else
+				{
+					vardata.statsTuple = SearchSysCache3(STATRELATTINH,
+														 ObjectIdGetDatum(relid),
+														 Int16GetDatum(colnum),
+														 /* XXX no inh */
+														 BoolGetDatum(false));
+					vardata.freefunc = ReleaseSysCache;
+				}
+
+				if (HeapTupleIsValid(vardata.statsTuple))
+				{
+					float4	   *numbers;
+					int			nnumbers;
+
+					/* XXX is InvalidOID reqop fine?? */
+					if (get_attstatsslot(vardata.statsTuple, InvalidOid, 0,
+										 STATISTIC_KIND_CORRELATION,
+										 InvalidOid,
+										 NULL,
+										 NULL, NULL,
+										 &numbers, &nnumbers))
+					{
+						double	varCorrelation;
+
+						Assert(nnumbers == 1);
+						varCorrelation = Abs(numbers[0]);
+
+						Assert(varCorrelation >= 0 && varCorrelation <= 1);
+
+						if (varCorrelation > *indexCorrelation)
+							*indexCorrelation = varCorrelation;
+
+						free_attstatsslot(InvalidOid, NULL, 0, numbers, nnumbers);
+					}
+				}
+			}
+			else
+			{
+				/* Expression --- maybe there are stats for the index itself */
+				Assert(false);
+			}
+
+			ReleaseVariableStats(vardata);
+		}
+	}
+
+	qualSelectivity = clauselist_selectivity(root, indexQuals,
+											 baserel->relid,
+											 JOIN_INNER, NULL);
+
+	indexRel = index_open(index->indexoid, AccessShareLock);
+	blockProportion = (double) BrinGetPagesPerRange(indexRel) /
+						baserel->pages;
+	numBlocks = 1 + baserel->pages / BrinGetPagesPerRange(indexRel);
+	index_close(indexRel, AccessShareLock);
 
 	/*
-	 * Add on index qual eval costs, much as in genericcostestimate.
+	 * Index selectivity is important for the planner to calculate the cost
+	 * of the bitmap heap scan.  Unfortunately, we don't have a robust way to
+	 * estimate selectivity of BRIN.  It can dependent on many things.  This
+	 * is a long rationale about the incomplete calculation we have at the
+	 * moment.
+	 *
+	 * Our starting point is that BRIN selectivity has to be less than the
+	 * selectivity of the btree.  We are using a product of logical and
+	 * physical selectivities to achieve this.  The equality of
+	 *
+	 *	(1 + logical_selectivity) * (1 + physical_selectivity) - 1
+	 *
+	 * is used to make sure the result is not less than any of the values.
+	 *
+	 * The logical selectivity is calculated using the indexable expressions
+	 * of the WHERE clause.  The physical selectivity is calculated using
+	 * the block proportion and the maximum correlation.  The block
+	 * proportion is a comparable value with selectivity.  It is the
+	 * selectivity of the smallest unit of the index.  The final selectivity
+	 * can never be less than that.
+	 *
+	 * Using the contrary of the correlation by subtracting it from 1 is not
+	 * not really a comparable value with the selectivity.  It is just a
+	 * value between 0 and 1.  On the other hand, it is the only value
+	 * related to the BRIN quality, we have available right now.  We are
+	 * using the arithmetic of it with the block proportion to normalise it.
+	 * This part of the physical selectivity is likely to be more effective
+	 * than the block proportion in many circumstances as there would be
+	 * many blocks on big tables.
+	 *
+	 * Using the contrary of the correlation of a column as selectivity of
+	 * the index is wrong in many ways.  First of all, it cannot be applied
+	 * to all BRIN operator classes.  It makes sense for the main built-in
+	 * operator class "minmax", and makes a little sense for the other one
+	 * "inclusion".  It wouldn't probably make any sense for a bloom filter
+	 * implementation, if there would be any.  Maybe, we should push down
+	 * this function to the operator class, but there is not enough reason
+	 * to do it right now.
+	 *
+	 * Second, correlation is not dependent to any indexed expression.  It
+	 * probably doesn't make any sense for the complicated operators.  It
+	 * would probably effect basic comparison operators differently than
+	 * equality operator.  The effect would even differ by count of those
+	 * expressions.  For example, x IN (10, 20, 30) would be effected from
+	 * correlation more than x = 15, even when their selectivities are the
+	 * same.
+	 *
+	 * Last but not least, the correlation is a single value for the whole
+	 * range.  The indexed table can partly be very well correlated, but
+	 * the correlation value can still be very low.  For example, if a
+	 * perfectly correlated table is copied 4 times, the correlation would
+	 * be 0.25, although the index would be almost as good as the version on
+	 * the initial table.  Or the expression can match the better correlated
+	 * part of the table.  It is not hard to imagine more scenarios where
+	 * the correlation is a bad value to use as the selectivity.  We should
+	 * probably improve this by collecting more statistics, one day.
+	 *
+	 * Another problem in here is that the caller assumes the selectivity
+	 * by tuples.  It might have been better, if we had a way to return it
+	 * as some number of pages.  On the other hand, even though we know about
+	 * the index, it is not too much easier for us to estimate the number of
+	 * matching pages then it is for the caller.  We are likely to make too
+	 * much mistake by relying on the correlation, anyway.  We are at least
+	 * not making it worse in here.
+	 */
+	blockSelectivity = (blockProportion + 1 - *indexCorrelation) / 2;
+	selec = (1 + qualSelectivity) * (1 + blockSelectivity) - 1;
+	CLAMP_PROBABILITY(selec);
+
+	*indexSelectivity = selec;
+
+	/*
+	 * Add index qual arg costs, much as in genericcostestimate.
 	 */
 	qual_arg_cost = other_operands_eval_cost(root, qinfos) +
 		orderby_operands_eval_cost(root, path);
-	qual_op_cost = cpu_operator_cost *
-		(list_length(indexQuals) + list_length(indexOrderBys));
-
 	*indexStartupCost += qual_arg_cost;
 	*indexTotalCost += qual_arg_cost;
-	*indexTotalCost += (numTuples * *indexSelectivity) * (cpu_index_tuple_cost + qual_op_cost);
 
-	/* XXX what about pages_per_range? */
+	/*
+	 * Add index qual op costs.  Unlike other indexes, we are not
+	 * processing but blocks.
+	 */
+	qual_op_cost = cpu_operator_cost * list_length(indexQuals);
+	*indexTotalCost += numBlocks * qual_op_cost;
+
+	/*
+	 * Add CPU index tuple costs, much as in genericcostestimate.
+	 */
+	*indexTotalCost += selec * numTuples * cpu_index_tuple_cost;
+
+	PG_RETURN_VOID();
 }
