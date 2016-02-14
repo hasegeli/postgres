@@ -93,9 +93,11 @@ typedef struct spgChooseOut
 			/* Info to form new inner tuple with one node */
 			bool		prefixHasPrefix;		/* tuple should have a prefix? */
 			Datum		prefixPrefixDatum;		/* if so, its value */
-			Datum		nodeLabel;		/* node's label */
+			int			prefixNNodes;	/* number of nodes for new inner tuple */
+			Datum	   *prefixNodeLabels;	/* their labels (or NULL for no labels) */
 
 			/* Info to form new lower-level inner tuple with all old nodes */
+			int			postfixNodeN;	/* where to insert it (index from 0) */
 			bool		postfixHasPrefix;		/* tuple should have a prefix? */
 			Datum		postfixPrefixDatum;		/* if so, its value */
 		}			splitTuple;

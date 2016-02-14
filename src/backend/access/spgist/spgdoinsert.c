@@ -1706,16 +1706,32 @@ spgSplitNodeAction(Relation index, SpGistState *state,
 	Assert(!SpGistPageStoresNulls(current->page));
 
 	/*
-	 * Construct new prefix tuple, containing a single node with the specified
-	 * label.  (We'll update the node's downlink to point to the new postfix
-	 * tuple, below.)
+	 * Construct new prefix tuple with given number of nodes.  We are
+	 * going to update one of those node's downlink to point to the new
+	 * postfix tuple, below.
 	 */
-	node = spgFormNodeTuple(state, out->result.splitTuple.nodeLabel, false);
+	if (out->result.splitTuple.prefixNNodes == 0)
+		elog(ERROR,
+			 "prefix must have at least one node to point to the new postfix");
+	nodes = (SpGistNodeTuple *) palloc(sizeof(SpGistNodeTuple) *
+									   out->result.splitTuple.prefixNNodes);
+
+	for (i = 0; i < out->result.splitTuple.prefixNNodes; i++)
+	{
+		Datum		label = (Datum) 0;
+		bool		labelisnull =
+						(out->result.splitTuple.prefixNodeLabels == NULL);
+
+		if (!labelisnull)
+			label = out->result.splitTuple.prefixNodeLabels[i];
+		nodes[i] = spgFormNodeTuple(state, label, labelisnull);
+	}
 
 	prefixTuple = spgFormInnerTuple(state,
 									out->result.splitTuple.prefixHasPrefix,
 									out->result.splitTuple.prefixPrefixDatum,
-									1, &node);
+									out->result.splitTuple.prefixNNodes,
+									nodes);
 
 	/* it must fit in the space that innerTuple now occupies */
 	if (prefixTuple->size > innerTuple->size)
@@ -1807,10 +1823,16 @@ spgSplitNodeAction(Relation index, SpGistState *state,
 	 * the postfix tuple first.)  We have to update the local copy of the
 	 * prefixTuple too, because that's what will be written to WAL.
 	 */
-	spgUpdateNodeLink(prefixTuple, 0, postfixBlkno, postfixOffset);
+	if (out->result.splitTuple.postfixNodeN >=
+		out->result.splitTuple.prefixNNodes)
+		elog(ERROR,
+			 "prefix doesn't have enough nodes to point to the new postfix");
+	spgUpdateNodeLink(prefixTuple, out->result.splitTuple.postfixNodeN,
+					  postfixBlkno, postfixOffset);
 	prefixTuple = (SpGistInnerTuple) PageGetItem(current->page,
 							  PageGetItemId(current->page, current->offnum));
-	spgUpdateNodeLink(prefixTuple, 0, postfixBlkno, postfixOffset);
+	spgUpdateNodeLink(prefixTuple, out->result.splitTuple.postfixNodeN,
+					  postfixBlkno, postfixOffset);
 
 	MarkBufferDirty(current->buffer);
 
