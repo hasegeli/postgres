@@ -443,6 +443,11 @@ DATA(insert (	4017   25 25 2 4028 ));
 DATA(insert (	4017   25 25 3 4029 ));
 DATA(insert (	4017   25 25 4 4030 ));
 DATA(insert (	4017   25 25 5 4031 ));
+DATA(insert (	4573   869	869  1 4574 ));
+DATA(insert (	4573   869	869  2 4575 ));
+DATA(insert (	4573   869	869  3 4576 ));
+DATA(insert (	4573   869	869  4 3577 ));
+DATA(insert (	4573   869	869  5 3578 ));
 
 /* BRIN opclasses */
 /* minmax bytea */

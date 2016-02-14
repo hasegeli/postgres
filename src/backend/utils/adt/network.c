@@ -268,11 +268,7 @@ Datum
 inet_to_cidr(PG_FUNCTION_ARGS)
 {
 	inet	   *src = PG_GETARG_INET_PP(0);
-	inet	   *dst;
 	int			bits;
-	int			byte;
-	int			nbits;
-	int			maxbytes;
 
 	bits = ip_bits(src);
 
@@ -280,29 +276,7 @@ inet_to_cidr(PG_FUNCTION_ARGS)
 	if ((bits < 0) || (bits > ip_maxbits(src)))
 		elog(ERROR, "invalid inet bit length: %d", bits);
 
-	/* clone the original data */
-	dst = (inet *) palloc(VARSIZE_ANY(src));
-	memcpy(dst, src, VARSIZE_ANY(src));
-
-	/* zero out any bits to the right of the netmask */
-	byte = bits / 8;
-
-	nbits = bits % 8;
-	/* clear the first byte, this might be a partial byte */
-	if (nbits != 0)
-	{
-		ip_addr(dst)[byte] &= ~(0xFF >> nbits);
-		byte++;
-	}
-	/* clear remaining bytes */
-	maxbytes = ip_addrsize(dst);
-	while (byte < maxbytes)
-	{
-		ip_addr(dst)[byte] = 0;
-		byte++;
-	}
-
-	PG_RETURN_INET_P(dst);
+	PG_RETURN_INET_P(cidr_set_masklen_internal(src, bits));
 }
 
 Datum
@@ -334,10 +308,6 @@ cidr_set_masklen(PG_FUNCTION_ARGS)
 {
 	inet	   *src = PG_GETARG_INET_PP(0);
 	int			bits = PG_GETARG_INT32(1);
-	inet	   *dst;
-	int			byte;
-	int			nbits;
-	int			maxbytes;
 
 	if (bits == -1)
 		bits = ip_maxbits(src);
@@ -347,31 +317,31 @@ cidr_set_masklen(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("invalid mask length: %d", bits)));
 
-	/* clone the original data */
-	dst = (inet *) palloc(VARSIZE_ANY(src));
-	memcpy(dst, src, VARSIZE_ANY(src));
+	PG_RETURN_INET_P(cidr_set_masklen_internal(src, bits));
+}
 
+inet *
+cidr_set_masklen_internal(inet *src, int bits)
+{
+	inet	   *dst = (inet *) palloc0(sizeof(inet));
+
+	ip_family(dst) = ip_family(src);
 	ip_bits(dst) = bits;
 
-	/* zero out any bits to the right of the new netmask */
-	byte = bits / 8;
+	if (bits > 0)
+	{
+		/* Clone appropriate bytes of the address */
+		memcpy(ip_addr(dst), ip_addr(src), (bits + 7) / 8);
 
-	nbits = bits % 8;
-	/* clear the first byte, this might be a partial byte */
-	if (nbits != 0)
-	{
-		ip_addr(dst)[byte] &= ~(0xFF >> nbits);
-		byte++;
-	}
-	/* clear remaining bytes */
-	maxbytes = ip_addrsize(dst);
-	while (byte < maxbytes)
-	{
-		ip_addr(dst)[byte] = 0;
-		byte++;
+		/* Clear any unwanted bits in the last partial byte */
+		if (bits % 8 > 0)
+			ip_addr(dst)[bits / 8] &= ~(0xFF >> (bits % 8));
 	}
 
-	PG_RETURN_INET_P(dst);
+	/* Set varlena header correctly */
+	SET_INET_VARSIZE(dst);
+
+	return dst;
 }
 
 /*
@@ -907,8 +877,7 @@ Datum
 inet_merge(PG_FUNCTION_ARGS)
 {
 	inet	   *a1 = PG_GETARG_INET_PP(0),
-			   *a2 = PG_GETARG_INET_PP(1),
-			   *result;
+			   *a2 = PG_GETARG_INET_PP(1);
 	int			commonbits;
 
 	if (ip_family(a1) != ip_family(a2))
@@ -919,24 +888,7 @@ inet_merge(PG_FUNCTION_ARGS)
 	commonbits = bitncommon(ip_addr(a1), ip_addr(a2),
 							Min(ip_bits(a1), ip_bits(a2)));
 
-	/* Make sure any unused bits are zeroed. */
-	result = (inet *) palloc0(sizeof(inet));
-
-	ip_family(result) = ip_family(a1);
-	ip_bits(result) = commonbits;
-
-	/* Clone appropriate bytes of the address. */
-	if (commonbits > 0)
-		memcpy(ip_addr(result), ip_addr(a1), (commonbits + 7) / 8);
-
-	/* Clean any unwanted bits in the last partial byte. */
-	if (commonbits % 8 != 0)
-		ip_addr(result)[commonbits / 8] &= ~(0xFF >> (commonbits % 8));
-
-	/* Set varlena header correctly. */
-	SET_INET_VARSIZE(result);
-
-	PG_RETURN_INET_P(result);
+	PG_RETURN_INET_P(cidr_set_masklen_internal(a1, commonbits));
 }
 
 /*
