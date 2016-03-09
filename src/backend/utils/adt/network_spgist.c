@@ -1,7 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * network_spgist.c
- *	  SP-GiST support for network types.
+ * SP-GiST implementation for network address types
  *
  * The index used cidr data type on the inner nodes as the prefix.  All
  * of the inner nodes has static number of sub-nodes.  It is 2 for
@@ -118,8 +117,8 @@ inet_spg_choose(PG_FUNCTION_ARGS)
 
 	if (in->allTheSame)
 	{
+		/* The node number will be set by the SP-GiST framework. */
 		out->resultType = spgMatchNode;
-		/* nodeN will be set by core */
 		out->result.matchNode.restDatum = InetPGetDatum(orig);
 
 		PG_RETURN_VOID();
@@ -158,7 +157,7 @@ inet_spg_choose(PG_FUNCTION_ARGS)
 }
 
 /*
- * The GiST PickSplit method
+ * The SP-GiST pick-split function
  *
  * There are two ways to split.  First one is to split by address
  * families, if there are multiple families appearing in the input.
@@ -249,13 +248,33 @@ inet_spg_inner_consistent(PG_FUNCTION_ARGS)
 	spgInnerConsistentIn *in = (spgInnerConsistentIn *) PG_GETARG_POINTER(0);
 	spgInnerConsistentOut *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
 	int			i;
-	unsigned char which;
+	unsigned char bitmap;
+
+	if (in->allTheSame)
+	{
+		/*
+		 * The node without prefix cannot be "all the same".  See
+		 * the comment on inet_spg_choose().
+		 */
+		Assert(in->hasPrefix);
+
+		/*
+		 * The nodes are set by the SP-GiST framework when it is
+		 * "all the same".  We are marking all of them.
+		 */
+		out->nNodes = in->nNodes;
+		out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
+		for (i = 0; i < in->nNodes; i++)
+			out->nodeNumbers[i] = i;
+
+		PG_RETURN_VOID();
+	}
 
 	if (!in->hasPrefix)
 	{
 		Assert(in->nNodes == 2);
 
-		which = 1 | 1 << 1;
+		bitmap = 1 | 1 << 1;
 
 		for (i = 0; i < in->nkeys; i++)
 		{
@@ -267,45 +286,35 @@ inet_spg_inner_consistent(PG_FUNCTION_ARGS)
 				case RTLessStrategyNumber:
 				case RTLessEqualStrategyNumber:
 					if (ip_family(argument) == PGSQL_AF_INET)
-						which &= 1;
+						bitmap &= 1;
 					break;
 
 				case RTGreaterEqualStrategyNumber:
 				case RTGreaterStrategyNumber:
 					if (ip_family(argument) == PGSQL_AF_INET6)
-						which &= 1 << 1;
+						bitmap &= 1 << 1;
 					break;
 
 				case RTNotEqualStrategyNumber:
 					break;
-
-				default:
-					if (ip_family(argument) == PGSQL_AF_INET)
-						which &= 1;
-					else
-						which &= 1 << 1;
 			}
 		}
 	}
-	else if (!in->allTheSame)
+	else
 	{
 		Assert(in->nNodes == 4);
 
-		which = inet_spg_consistent_bitmap(DatumGetInetPP(in->prefixDatum),
-										   in->nkeys, in->scankeys, false);
+		bitmap = inet_spg_consistent_bitmap(DatumGetInetPP(in->prefixDatum),
+											in->nkeys, in->scankeys, false);
 	}
-	else
-		which = 255;
 
 	out->nNodes = 0;
-
-	if (which)
+	if (bitmap)
 	{
 		out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
-
 		for (i = 0; i < in->nNodes; i++)
 		{
-			if (which & 1 << i)
+			if (bitmap & 1 << i)
 			{
 				out->nodeNumbers[out->nNodes] = i;
 				out->nNodes++;
@@ -390,7 +399,7 @@ inet_spg_consistent_bitmap(inet *prefix, int nkeys, ScanKey scankeys, bool leaf)
 		StrategyNumber strategy = scankeys[i].sk_strategy;
 
 		/*
-		 * Check 0: different families
+		 * Check 0: IP family
 		 *
 		 * Matching families do not help any of the strategies.
 		 */
@@ -523,8 +532,8 @@ inet_spg_consistent_bitmap(inet *prefix, int nkeys, ScanKey scankeys, bool leaf)
 				break;
 
 			/*
-			 * Remaining checks makes no sense, when common bits don't
-			 * match.
+			 * Remaining checks makes no sense, when the common bits
+			 * don't match.
 			 */
 			continue;
 		}
@@ -576,15 +585,15 @@ inet_spg_consistent_bitmap(inet *prefix, int nkeys, ScanKey scankeys, bool leaf)
 
 		/*
 		 * Remaining checks are only for the basic comparison
-		 * strategies.  We are relying on the strategy numbers defined
-		 * on stratnum.h.
+		 * strategies.  We are relying on the ordering of the strategy
+		 * numbers to identify them.  They are defined on stratnum.h.
 		 */
 		if (strategy < RTEqualStrategyNumber ||
 			strategy > RTGreaterEqualStrategyNumber)
 			continue;
 
 		/*
-		 * Check 4: network bit count
+		 * Check 4: network bit count again
 		 *
 		 * At this point, we know that the common network bits of
 		 * the prefix and the argument are the same, so we can go
@@ -610,7 +619,7 @@ inet_spg_consistent_bitmap(inet *prefix, int nkeys, ScanKey scankeys, bool leaf)
 		if (!bitmap)
 			break;
 
-		/* Remaining check doesn't make sense with different ip_bits. */
+		/* Remaining checks don't make sense with different ip_bits. */
 		if (commonbits != ip_bits(argument))
 			continue;
 
@@ -621,9 +630,15 @@ inet_spg_consistent_bitmap(inet *prefix, int nkeys, ScanKey scankeys, bool leaf)
 		 * host bit of the argument, if it is available.
 		 *
 		 * This check matters for the performance of the search.
-		 * The results would be correct without it.  There is no point
+		 * The results could be correct without it.  There is no point
 		 * of running it for the leafs as we have to check the whole
 		 * address on the next step.
+		 *
+		 * Furthermore by not running this check, we restrict return
+		 * value to 0 and 1 for the leafs.  If we would have run this
+		 * for leafs, we would need to initialise the bitmap with
+		 * 1 | 1 << 1.  None of the checks before this one threat 1 and
+		 * 1 << 1 separately.
 		 */
 		if (!leaf && bitmap & (1 | 1 << 1) &&
 			commonbits < ip_maxbits(argument))
