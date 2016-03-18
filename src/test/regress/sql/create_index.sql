@@ -100,6 +100,11 @@ CREATE INDEX ggcircleind ON gcircle_tbl USING gist (f1);
 -- SP-GiST
 --
 
+CREATE TEMP TABLE q4d_boxes_tbl AS
+    SELECT home_base AS home_base FROM fast_emp4000;
+
+CREATE INDEX q4d_index ON q4d_boxes_tbl USING spgist (home_base);
+
 CREATE TABLE quad_point_tbl AS
     SELECT point(unique1,unique2) AS p FROM tenk1;
 
@@ -141,6 +146,14 @@ SELECT * FROM fast_emp4000
 SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
 
 SELECT count(*) FROM fast_emp4000 WHERE home_base IS NULL;
+
+SELECT * FROM q4d_boxes_tbl
+    WHERE home_base @ '(200,200),(2000,1000)'::box
+    ORDER BY (home_base[0])[0];
+
+SELECT count(*) FROM q4d_boxes_tbl WHERE home_base && '(1000,1000,0,0)'::box;
+
+SELECT count(*) FROM q4d_boxes_tbl WHERE home_base IS NULL;
 
 SELECT * FROM polygon_tbl WHERE f1 ~ '((1,1),(2,2),(2,1))'::polygon
     ORDER BY (poly_center(f1))[0];
@@ -248,6 +261,22 @@ SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
 EXPLAIN (COSTS OFF)
 SELECT count(*) FROM fast_emp4000 WHERE home_base IS NULL;
 SELECT count(*) FROM fast_emp4000 WHERE home_base IS NULL;
+
+EXPLAIN (COSTS OFF)
+SELECT * FROM q4d_boxes_tbl
+    WHERE home_base @ '(200,200),(2000,1000)'::box
+    ORDER BY (home_base[0])[0];
+SELECT * FROM q4d_boxes_tbl
+    WHERE home_base @ '(200,200),(2000,1000)'::box
+    ORDER BY (home_base[0])[0];
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM q4d_boxes_tbl WHERE home_base && '(1000,1000,0,0)'::box;
+SELECT count(*) FROM q4d_boxes_tbl WHERE home_base && '(1000,1000,0,0)'::box;
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM q4d_boxes_tbl WHERE home_base IS NULL;
+SELECT count(*) FROM q4d_boxes_tbl WHERE home_base IS NULL;
 
 EXPLAIN (COSTS OFF)
 SELECT * FROM polygon_tbl WHERE f1 ~ '((1,1),(2,2),(2,1))'::polygon
