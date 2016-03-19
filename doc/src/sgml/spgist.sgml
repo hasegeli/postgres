@@ -637,9 +637,8 @@ typedef struct spgInnerConsistentOut
        <structfield>traversalValues</> array keeps pointers to
        specific data you need to accumulate for every child node.
        Memory for <structfield>traversalValues</> should be allocated in
-       the default context, but make sure to switch to
-       <structfield>traversalMemoryContext</> before allocating memory
-       for pointers themselves.
+       the default context, but each element of it should be allocated in
+       <structfield>traversalMemoryContext</>.
       </para>
      </listitem>
     </varlistentry>
