@@ -42,12 +42,6 @@
 #define PosInf	 1
 #define NotInf	 0
 
-#define LT		-1
-#define GT		 1
-#define EQ		 0
-
-
-
 /* InfR type implements doubles and +- infinity */
 typedef struct
 {
@@ -71,20 +65,20 @@ static int
 cmp_InfR_r(const InfR * infVal, const double val)
 {
 	if (infVal->infFlag == PosInf)
-		return GT;
+		return 1;
 	else if (infVal->infFlag == NegInf)
-		return LT;
+		return -1;
 	else
 	{
 		double		val0 = infVal->val;
 
-		if (val0 < val)
-			return LT;
-		if (val0 > val)
-			return GT;
+		if (FPlt(val0, val))
+			return -1;
+		if (FPgt(val0, val))
+			return 1;
 	}
 
-	return EQ;
+	return 0;
 }
 
 static int
@@ -93,11 +87,12 @@ compareDoubles(const void *a, const void *b)
 	double		x = *(double *) a;
 	double		y = *(double *) b;
 
-	if (x < y)
-		return LT;
-	if (x > y)
-		return GT;
-	return EQ;
+	if (FPlt(x, y))
+		return -1;
+	else if (FPgt(x, y))
+		return 1;
+	else
+		return 0;
 }
 
 /*-------------------------------------------------------------------------
@@ -268,7 +263,7 @@ intersect2D(const Range * range, const IRangeBox * range_box)
 	const int	p1 = cmp_InfR_r(y1, a);
 	const int	p2 = cmp_InfR_r(x0, b);
 
-	return ((p1 != LT) && (p2 != GT));
+	return ((p1 >= 0) && (p2 <= 0));
 }
 
 /*
@@ -300,7 +295,7 @@ contain2D(const Range * range, const IRangeBox * range_box)
 	const int	p1 = cmp_InfR_r(y1, b);
 	const int	p2 = cmp_InfR_r(x0, a);
 
-	return ((p1 != LT) && (p2 != GT));
+	return ((p1 >= 0) && (p2 <=0));
 }
 
 
@@ -337,7 +332,7 @@ contained2D(const Range * range, const IRangeBox * range_box)
 	const int	p3 = cmp_InfR_r(y0, b);
 	const int	p4 = cmp_InfR_r(y1, a);
 
-	return ((p1 != GT) && (p2 != LT) && (p3 != GT) && (p4 != LT));
+	return ((p1 <= 0) && (p2 >= 0) && (p3 <= 0) && (p4 >= 0));
 }
 
 /*
@@ -368,7 +363,7 @@ isLower(const Range * range, const IRangeBox * range_box)
 	const int	p1 = cmp_InfR_r(x0, a);
 	const int	p2 = cmp_InfR_r(y0, a);
 
-	return (p1 == LT && p2 == LT);
+	return (p1 < 0 && p2 < 0);
 }
 
 /*
@@ -386,7 +381,7 @@ isHigher(const Range * range, const IRangeBox * range_box)
 	const int	p1 = cmp_InfR_r(x1, b);
 	const int	p2 = cmp_InfR_r(y1, b);
 
-	return (p1 == GT && p2 == GT);
+	return (p1 > 0 && p2 > 0);
 }
 
 static int
@@ -412,14 +407,6 @@ above4D(const Rectangle * rectangle, const IRectBox * rect_box)
 {
 	return isHigher(&rectangle->range_y, &rect_box->range_box_y);
 }
-
-
-/* SP-GiST API functions */
-Datum		spg_box_quad_config(PG_FUNCTION_ARGS);
-Datum		spg_box_quad_choose(PG_FUNCTION_ARGS);
-Datum		spg_box_quad_picksplit(PG_FUNCTION_ARGS);
-Datum		spg_box_quad_inner_consistent(PG_FUNCTION_ARGS);
-Datum		spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS);
 
 /*
  * SP-GiST 'config' interface function.

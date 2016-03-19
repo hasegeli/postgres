@@ -140,7 +140,7 @@ SET enable_indexscan = OFF;
 SET enable_bitmapscan = OFF;
 
 SELECT * FROM fast_emp4000
-    WHERE home_base @ '(200,200),(2000,1000)'::box
+    WHERE home_base <@ '(200,200),(2000,1000)'::box
     ORDER BY (home_base[0])[0];
 
 SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
@@ -148,7 +148,7 @@ SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
 SELECT count(*) FROM fast_emp4000 WHERE home_base IS NULL;
 
 SELECT * FROM q4d_boxes_tbl
-    WHERE home_base @ '(200,200),(2000,1000)'::box
+    WHERE home_base <@ '(200,200),(2000,1000)'::box
     ORDER BY (home_base[0])[0];
 
 SELECT count(*) FROM q4d_boxes_tbl WHERE home_base && '(1000,1000,0,0)'::box;
@@ -248,10 +248,10 @@ SET enable_bitmapscan = OFF;
 
 EXPLAIN (COSTS OFF)
 SELECT * FROM fast_emp4000
-    WHERE home_base @ '(200,200),(2000,1000)'::box
+    WHERE home_base <@ '(200,200),(2000,1000)'::box
     ORDER BY (home_base[0])[0];
 SELECT * FROM fast_emp4000
-    WHERE home_base @ '(200,200),(2000,1000)'::box
+    WHERE home_base <@ '(200,200),(2000,1000)'::box
     ORDER BY (home_base[0])[0];
 
 EXPLAIN (COSTS OFF)
@@ -264,10 +264,10 @@ SELECT count(*) FROM fast_emp4000 WHERE home_base IS NULL;
 
 EXPLAIN (COSTS OFF)
 SELECT * FROM q4d_boxes_tbl
-    WHERE home_base @ '(200,200),(2000,1000)'::box
+    WHERE home_base <@ '(200,200),(2000,1000)'::box
     ORDER BY (home_base[0])[0];
 SELECT * FROM q4d_boxes_tbl
-    WHERE home_base @ '(200,200),(2000,1000)'::box
+    WHERE home_base <@ '(200,200),(2000,1000)'::box
     ORDER BY (home_base[0])[0];
 
 EXPLAIN (COSTS OFF)
