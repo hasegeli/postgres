@@ -65,7 +65,7 @@ BSD indent
 ----------
 
 We have standardized on NetBSD's indent, and renamed it pg_bsd_indent.
-We have fixed a few bugs which requre the NetBSD source to be patched
+We have fixed a few bugs which require the NetBSD source to be patched
 with indent.bsd.patch patch.  A fully patched version is available at
 ftp://ftp.postgresql.org/pub/dev.
 
