@@ -9,12 +9,12 @@
  * index is to tell, for a given box, which other boxes intersect it,
  * contain or are contained by it, etc.
  *
- * For example consider the case of intersection.
- * When recursion descends deeper and deeper down the tree, all quadrants in
- * the current node will eventually be passed to the intersect4D function call.
- * This function answers the question: can any box from this quadrant intersect
- * with given box (query box)? If yes, then this quadrant will be walked.
- * If no, then this quadrant will be rejected.
+ * For example consider the case of intersection. When recursion descends
+ * deeper and deeper down the tree, all quadrants in the current node will
+ * eventually be passed to the intersect4D function call. This function answers
+ * the question: can any box from this quadrant intersect with given
+ * box (query box)? If yes, then this quadrant will be walked. If no, then this
+ * quadrant will be rejected.
  *
  * A quadrant has bounds, but sp-gist keeps only 4-d point (box) in inner nodes.
  * We use traversalValue to calculate quadrant bounds from parent's quadrant
@@ -34,47 +34,29 @@
 #include "access/spgist.h"
 #include "access/stratnum.h"
 #include "catalog/pg_type.h"
-#include "utils/builtins.h";
-#include "utils/datum.h"
+#include "utils/builtins.h"
 #include "utils/geo_decls.h"
 
-#define NegInf	-1
-#define PosInf	 1
-#define NotInf	 0
-
-/* InfR type implements doubles and +- infinity */
-typedef struct
-{
-	int			infFlag;
-	double		val;
-}	InfR;
-
-static InfR negInf = {NegInf, 0};
-static InfR posInf = {PosInf, 0};
-
-/* wrap double to InfR */
-static InfR
-toInfR(double v, InfR * r)
-{
-	r->infFlag = NotInf;
-	r->val = v;
-}
-
-/* compare InfR with double */
+/*
+ * compare arbitrary double value a with guaranteed non-infinity
+ * double b
+ */
 static int
-cmp_InfR_r(const InfR * infVal, const double val)
+cmp_double(const double a, const double b)
 {
-	if (infVal->infFlag == PosInf)
+	int r = is_infinite(a);
+
+	Assert(is_infinite(b) == 0);
+
+	if (r > 0)
 		return 1;
-	else if (infVal->infFlag == NegInf)
+	else if (r < 0)
 		return -1;
 	else
 	{
-		double		val0 = infVal->val;
-
-		if (FPlt(val0, val))
+		if (FPlt(a, b))
 			return -1;
-		if (FPgt(val0, val))
+		if (FPgt(a, b))
 			return 1;
 	}
 
@@ -95,30 +77,6 @@ compareDoubles(const void *a, const void *b)
 		return 0;
 }
 
-/*-------------------------------------------------------------------------
- * We have two families of types:
- *       IRange, IRangeBox and IRectBox are parameterized with InfR,
- * while Range and Rectangle are parameterized with double
- *-------------------------------------------------------------------------
- */
-typedef struct
-{
-	InfR		low;
-	InfR		high;
-}	IRange;
-
-typedef struct
-{
-	IRange		left;
-	IRange		right;
-}	IRangeBox;
-
-typedef struct
-{
-	IRangeBox	range_box_x;
-	IRangeBox	range_box_y;
-}	IRectBox;
-
 typedef struct
 {
 	double		low;
@@ -127,20 +85,25 @@ typedef struct
 
 typedef struct
 {
-	Range		range_x;
-	Range		range_y;
-}	Rectangle;
+	Range		left;
+	Range		right;
+}	RangeBox;
 
-
-/* Fill Rectangle using BOX */
-inline static void
-boxPointerToRectangle(BOX *box, Rectangle * rectangle)
+typedef struct
 {
-	rectangle->range_x.low = box->low.x;
-	rectangle->range_x.high = box->high.x;
+	RangeBox	range_box_x;
+	RangeBox	range_box_y;
+}	RectBox;
 
-	rectangle->range_y.low = box->low.y;
-	rectangle->range_y.high = box->high.y;
+/* Fill RangeBox using BOX */
+inline static void
+boxPointerToRangeBox(BOX *box, RangeBox * rectangle)
+{
+	rectangle->left.low = box->low.x;
+	rectangle->left.high = box->high.x;
+
+	rectangle->right.low = box->low.y;
+	rectangle->right.high = box->high.y;
 }
 
 /*-----------------------------------------------------------------
@@ -174,33 +137,33 @@ getQuadrant(const BOX *centroid, const BOX *inBox)
 
 
 /*
- * All centroids in q4d tree are bounded by IRectBox, but SP-Gist only keeps
- * boxes. When we walk into depth, we must calculate IRectBox,
- * using centroid and quadrant. The following function calculates IRangeBox.
+ * All centroids in q4d tree are bounded by RectBox, but SP-Gist only keeps
+ * boxes. When we walk into depth, we must calculate RectBox,
+ * using centroid and quadrant. The following function calculates RangeBox.
  */
 static void
-evalIRangeBox(const IRangeBox *range_box, const Range *range, const int half1,
-			  const int half2, IRangeBox *new_range_box)
+evalRangeBox(const RangeBox *range_box, const Range *range, const int half1,
+			  const int half2, RangeBox *new_range_box)
 {
 	if (half1 == 0)
 	{
-		toInfR(range->low, &(new_range_box->left.high));
+		new_range_box->left.high = range->low;
 		new_range_box->left.low = range_box->left.low;
 	}
 	else
 	{
-		toInfR(range->low, &(new_range_box->left.low));
+		new_range_box->left.low = range->low;
 		new_range_box->left.high = range_box->left.high;
 	}
 
 	if (half2 == 0)
 	{
-		toInfR(range->high, &(new_range_box->right.high));
+		new_range_box->right.high = range->high;
 		new_range_box->right.low = range_box->right.low;
 	}
 	else
 	{
-		toInfR(range->high, &(new_range_box->right.low));
+		new_range_box->right.low = range->high;
 		new_range_box->right.high = range_box->right.high;
 	}
 }
@@ -208,141 +171,120 @@ evalIRangeBox(const IRangeBox *range_box, const Range *range, const int half1,
 
 
 /*
- * All centroids in q4d tree are bounded by IRectBox, but SP-Gist only keeps
- * boxes. When we walk into depth, we must calculate IRectBox,
+ * All centroids in q4d tree are bounded by RectBox, but SP-Gist only keeps
+ * boxes. When we walk into depth, we must calculate RectBox,
  * using centroid and quadrant.
  */
 static void
-evalIRectBox(const IRectBox *rect_box, const Rectangle *centroid,
-			 const uint8 quadrant, IRectBox * new_rect_box)
+evalRectBox(const RectBox *rect_box, const RangeBox *centroid,
+			 const uint8 quadrant, RectBox * new_rect_box)
 {
 	const int	half1 = quadrant & 0x8;
 	const int	half2 = quadrant & 0x4;
 	const int	half3 = quadrant & 0x2;
 	const int	half4 = quadrant & 0x1;
 
-	evalIRangeBox(&rect_box->range_box_x, &centroid->range_x, half1, half2,
+	evalRangeBox(&rect_box->range_box_x, &centroid->left, half1, half2,
 				  &new_rect_box->range_box_x);
-	evalIRangeBox(&rect_box->range_box_y, &centroid->range_y, half3, half4,
+	evalRangeBox(&rect_box->range_box_y, &centroid->right, half3, half4,
 				  &new_rect_box->range_box_y);
 }
 
 
 /*
- *initialize IRangeBox covering all space
+ *initialize RangeBox covering all space
  */
-inline static void
-initializeUnboundedBox(IRectBox * rect_box)
+void
+initializeUnboundedBox(RectBox * rect_box)
 {
-	rect_box->range_box_x.left.low = negInf;
-	rect_box->range_box_x.left.high = posInf;
+	rect_box->range_box_x.left.low = -get_float8_infinity();
+	rect_box->range_box_x.left.high = get_float8_infinity();
 
-	rect_box->range_box_x.right.low = negInf;
-	rect_box->range_box_x.right.high = posInf;
+	rect_box->range_box_x.right.low = -get_float8_infinity();
+	rect_box->range_box_x.right.high = get_float8_infinity();
 
-	rect_box->range_box_y.left.low = negInf;
-	rect_box->range_box_y.left.high = posInf;
+	rect_box->range_box_y.left.low = -get_float8_infinity();
+	rect_box->range_box_y.left.high = get_float8_infinity();
 
-	rect_box->range_box_y.right.low = negInf;
-	rect_box->range_box_y.right.high = posInf;
+	rect_box->range_box_y.right.low = -get_float8_infinity();
+	rect_box->range_box_y.right.high = get_float8_infinity();
 }
 
 
 /*
  * answer the question: Can this range and any range from range_box intersect?
  */
-static int
-intersect2D(const Range * range, const IRangeBox * range_box)
+static bool
+intersect2D(const Range * range, const RangeBox * range_box)
 {
-	const InfR *x0 = &(range_box->left.low);
-	const InfR *y1 = &(range_box->right.high);
+	const int	p1 = cmp_double(range_box->right.high, range->low);
+	const int	p2 = cmp_double(range_box->left.low, range->high);
 
-	const double a = range->low;
-	const double b = range->high;
-
-	const int	p1 = cmp_InfR_r(y1, a);
-	const int	p2 = cmp_InfR_r(x0, b);
-
-	return ((p1 >= 0) && (p2 <= 0));
+	return (p1 >= 0) && (p2 <= 0);
 }
 
 /*
  * answer the question: Can this rectangle and any rectangle from rect_box
  * intersect?
  */
-static int
-intersect4D(const Rectangle * rectangle, const IRectBox * rect_box)
+static bool
+intersect4D(const RangeBox * rectangle, const RectBox * rect_box)
 {
-	const int	px = intersect2D(&rectangle->range_x, &rect_box->range_box_x);
-	const int	py = intersect2D(&rectangle->range_y, &rect_box->range_box_y);
+	const int	px = intersect2D(&rectangle->left, &rect_box->range_box_x);
+	const int	py = intersect2D(&rectangle->right, &rect_box->range_box_y);
 
-	return (px && py);
+	return px && py;
 }
 
 
 /*
  * answer the question: Can any range from range_box contain this range?
  */
-static int
-contain2D(const Range * range, const IRangeBox * range_box)
+static bool
+contain2D(const Range * range, const RangeBox * range_box)
 {
-	const InfR *x0 = &range_box->left.low;
-	const InfR *y1 = &range_box->right.high;
+	const int	p1 = cmp_double(range_box->right.high, range->high);
+	const int	p2 = cmp_double(range_box->left.low, range->low);
 
-	const double a = range->low;
-	const double b = range->high;
-
-	const int	p1 = cmp_InfR_r(y1, b);
-	const int	p2 = cmp_InfR_r(x0, a);
-
-	return ((p1 >= 0) && (p2 <=0));
+	return (p1 >= 0) && (p2 <=0);
 }
 
 
 /*
  * answer the question: Can any rectangle from rect_box contain this rectangle?
  */
-static int
-contain4D(const Rectangle * rectangle, const IRectBox * rect_box)
+static bool
+contain4D(const RangeBox * rectangle, const RectBox * rect_box)
 {
-	const int	px = contain2D(&rectangle->range_x, &rect_box->range_box_x);
-	const int	py = contain2D(&rectangle->range_y, &rect_box->range_box_y);
+	const int	px = contain2D(&rectangle->left, &rect_box->range_box_x);
+	const int	py = contain2D(&rectangle->right, &rect_box->range_box_y);
 
-	return (px && py);
+	return px && py;
 }
 
 
 /*
  * answer the question: Can this range contain any range from range_box?
  */
-static int
-contained2D(const Range * range, const IRangeBox * range_box)
+static bool
+contained2D(const Range * range, const RangeBox * range_box)
 {
-	const InfR *x0 = &range_box->left.low;
-	const InfR *x1 = &range_box->left.high;
+	const int	p1 = cmp_double(range_box->left.low, range->high);
+	const int	p2 = cmp_double(range_box->left.high, range->low);
+	const int	p3 = cmp_double(range_box->right.low, range->high);
+	const int	p4 = cmp_double(range_box->right.high, range->low);
 
-	const InfR *y0 = &range_box->right.low;
-	const InfR *y1 = &range_box->right.high;
-
-	const double a = range->low;
-	const double b = range->high;
-
-	const int	p1 = cmp_InfR_r(x0, b);
-	const int	p2 = cmp_InfR_r(x1, a);
-	const int	p3 = cmp_InfR_r(y0, b);
-	const int	p4 = cmp_InfR_r(y1, a);
-
-	return ((p1 <= 0) && (p2 >= 0) && (p3 <= 0) && (p4 >= 0));
+	return (p1 <= 0) && (p2 >= 0) && (p3 <= 0) && (p4 >= 0);
 }
 
 /*
  * answer the question: Can this rectangle contain any rectangle from rect_box?
  */
-static int
-contained4D(const Rectangle * rectangle, const IRectBox * rect_box)
+static bool
+contained4D(const RangeBox * rectangle, const RectBox * rect_box)
 {
-	const int	px = contained2D(&rectangle->range_x, &rect_box->range_box_x);
-	const int	py = contained2D(&rectangle->range_y, &rect_box->range_box_y);
+	const int	px = contained2D(&rectangle->left, &rect_box->range_box_x);
+	const int	py = contained2D(&rectangle->right, &rect_box->range_box_y);
 
 	return (px && py);
 }
@@ -352,60 +294,50 @@ contained4D(const Rectangle * rectangle, const IRectBox * rect_box)
  * answer the question: Can any range from range_box to be lower than this
  * range?
  */
-static int
-isLower(const Range * range, const IRangeBox * range_box)
+static bool
+isLower(const Range * range, const RangeBox * range_box)
 {
-	const InfR *x0 = &range_box->left.low;
-	const InfR *y0 = &range_box->right.low;
+	const int	p1 = cmp_double(range_box->left.low, range->low);
+	const int	p2 = cmp_double(range_box->right.low, range->low);
 
-	const double a = range->low;
-
-	const int	p1 = cmp_InfR_r(x0, a);
-	const int	p2 = cmp_InfR_r(y0, a);
-
-	return (p1 < 0 && p2 < 0);
+	return (p1 < 0) && (p2 < 0);
 }
 
 /*
  * answer the question: Can any range from range_box to be higher than this
  * range?
  */
-static int
-isHigher(const Range * range, const IRangeBox * range_box)
+static bool
+isHigher(const Range * range, const RangeBox * range_box)
 {
-	const InfR *x1 = &range_box->left.high;
-	const InfR *y1 = &range_box->right.high;
+	const int	p1 = cmp_double(range_box->left.high, range->high);
+	const int	p2 = cmp_double(range_box->right.high, range->high);
 
-	const double b = range->high;
-
-	const int	p1 = cmp_InfR_r(x1, b);
-	const int	p2 = cmp_InfR_r(y1, b);
-
-	return (p1 > 0 && p2 > 0);
+	return (p1 > 0) && (p2 > 0);
 }
 
-static int
-left4D(const Rectangle * rectangle, const IRectBox * rect_box)
+static bool
+left4D(const RangeBox * rectangle, const RectBox * rect_box)
 {
-	return isLower(&rectangle->range_x, &rect_box->range_box_x);
+	return isLower(&rectangle->left, &rect_box->range_box_x);
 }
 
-static int
-right4D(const Rectangle * rectangle, const IRectBox * rect_box)
+static bool
+right4D(const RangeBox * rectangle, const RectBox * rect_box)
 {
-	return isHigher(&rectangle->range_x, &rect_box->range_box_x);
+	return isHigher(&rectangle->left, &rect_box->range_box_x);
 }
 
-static int
-below4D(const Rectangle * rectangle, const IRectBox * rect_box)
+static bool
+below4D(const RangeBox * rectangle, const RectBox * rect_box)
 {
-	return isLower(&rectangle->range_y, &rect_box->range_box_y);
+	return isLower(&rectangle->right, &rect_box->range_box_y);
 }
 
-static int
-above4D(const Rectangle * rectangle, const IRectBox * rect_box)
+static bool
+above4D(const RangeBox * rectangle, const RectBox * rect_box)
 {
-	return isHigher(&rectangle->range_y, &rect_box->range_box_y);
+	return isHigher(&rectangle->right, &rect_box->range_box_y);
 }
 
 /*
@@ -428,8 +360,7 @@ Datum
 spg_box_quad_choose(PG_FUNCTION_ARGS)
 {
 	const spgChooseIn *in = (spgChooseIn *) PG_GETARG_POINTER(0);
-	spgChooseOut *out = (spgChooseOut *) PG_GETARG_POINTER(1);
-
+	const spgChooseOut *out = (spgChooseOut *) PG_GETARG_POINTER(1);
 	const BOX  *inBox = DatumGetBoxP(in->datum);
 	const BOX  *centroid = DatumGetBoxP(in->prefixDatum);
 
@@ -453,22 +384,19 @@ spg_box_quad_choose(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-
+/*
+ * spg_box_quad_picksplit
+ * splits a list of box into quadrants by choosing a central 4D point as
+ * the median of coordinates of boxes
+ */
 Datum
 spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 {
 	const spgPickSplitIn *in = (spgPickSplitIn *) PG_GETARG_POINTER(0);
-	spgPickSplitOut *out = (spgPickSplitOut *) PG_GETARG_POINTER(1);
-
+	const spgPickSplitOut *out = (spgPickSplitOut *) PG_GETARG_POINTER(1);
 	BOX		   *centroid;
 	int			median,
 				i;
-
-
-	/*
-	 * Begin. This block evaluates the median of coordinates of boxes
-	 */
-
 	double	   *lowXs = palloc(sizeof(double) * in->nTuples);
 	double	   *highXs = palloc(sizeof(double) * in->nTuples);
 	double	   *lowYs = palloc(sizeof(double) * in->nTuples);
@@ -536,18 +464,18 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	int			i;
 
 	MemoryContext oldCtx;
-	IRectBox   *rect_box;
+	RectBox   *rect_box;
 
 	uint8		quadrant;
 
-	Rectangle  *rectangle_centroid = (Rectangle *) palloc(sizeof(Rectangle));
-	Rectangle  *p_query_rect = (Rectangle *) palloc(sizeof(Rectangle));
+	RangeBox  *rectangle_centroid = (RangeBox *) palloc(sizeof(RangeBox));
+	RangeBox  *p_query_rect = (RangeBox *) palloc(sizeof(RangeBox));
 
-	boxPointerToRectangle(DatumGetBoxP(in->prefixDatum), rectangle_centroid);
+	boxPointerToRangeBox(DatumGetBoxP(in->prefixDatum), rectangle_centroid);
 
 	if (in->traversalValue)
 	{
-		/* Here we get 4 dimension bound box (IRectBox) from traversalValue */
+		/* Here we get 4 dimension bound box (RectBox) from traversalValue */
 		rect_box = in->traversalValue;
 	}
 	else
@@ -557,7 +485,7 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 		 * through the tree
 		 */
 
-		rect_box = (IRectBox *) palloc(sizeof(IRectBox));
+		rect_box = (RectBox *) palloc(sizeof(RectBox));
 		initializeUnboundedBox(rect_box);
 	}
 
@@ -573,17 +501,17 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 		/*
 		 * We switch memory context, because we want allocate memory for new
-		 * traversal values for IRectBox and transmit these pieces of memory
+		 * traversal values for RectBox and transmit these pieces of memory
 		 * to further calls of spg_box_quad_inner_consistent.
 		 */
 		oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
 
 		for (nnode = 0; nnode < in->nNodes; nnode++)
 		{
-			IRectBox   *new_rect_box;
+			RectBox   *new_rect_box;
 
-			new_rect_box = (IRectBox *) palloc(sizeof(IRectBox));
-			memcpy(new_rect_box, rect_box, sizeof(IRectBox));
+			new_rect_box = (RectBox *) palloc(sizeof(RectBox));
+			memcpy(new_rect_box, rect_box, sizeof(RectBox));
 
 			out->traversalValues[nnode] = new_rect_box;
 			out->nodeNumbers[nnode] = nnode;
@@ -605,22 +533,20 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 	for (quadrant = 0; quadrant < in->nNodes; quadrant++)
 	{
-		IRectBox   *new_rect_box;
-		int			flag = 1;
+		RectBox   *new_rect_box;
+		bool	   flag = true;
 
-		new_rect_box = (IRectBox *) palloc(sizeof(IRectBox));
+		new_rect_box = (RectBox *) palloc(sizeof(RectBox));
 
-		/* Calculates 4-dim IRectBox */
-		evalIRectBox(rect_box, rectangle_centroid, quadrant, new_rect_box);
+		/* Calculates 4-dim RectBox */
+		evalRectBox(rect_box, rectangle_centroid, quadrant, new_rect_box);
 
-		for (i = 0; flag && i < in->nkeys && flag; i++)
+		for (i = 0; flag && i < in->nkeys; i++)
 		{
 			const StrategyNumber strategy = in->scankeys[i].sk_strategy;
 
-			boxPointerToRectangle(
-				DatumGetBoxP(in->scankeys[i].sk_argument),
-				p_query_rect
-			);
+			boxPointerToRangeBox(DatumGetBoxP(in->scankeys[i].sk_argument),
+								 p_query_rect);
 
 			switch (strategy)
 			{
@@ -675,8 +601,8 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 	spgLeafConsistentIn *in = (spgLeafConsistentIn *) PG_GETARG_POINTER(0);
 	spgLeafConsistentOut *out = (spgLeafConsistentOut *) PG_GETARG_POINTER(1);
 	BOX		   *leafBox = DatumGetBoxP(in->leafDatum);
-	int			flag = 1,
-				i;
+	bool		flag = true;
+	int			i;
 
 	/* all tests are exact */
 	out->recheck = false;
@@ -685,7 +611,7 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 	out->leafValue = in->leafDatum;
 
 	/* Perform the required comparison(s) */
-	for (i = 0; flag && i < in->nkeys && flag; i++)
+	for (i = 0; flag && i < in->nkeys; i++)
 	{
 		const StrategyNumber strategy = in->scankeys[i].sk_strategy;
 		const Datum keyDatum = in->scankeys[i].sk_argument;
