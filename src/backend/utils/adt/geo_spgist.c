@@ -360,7 +360,7 @@ Datum
 spg_box_quad_choose(PG_FUNCTION_ARGS)
 {
 	const spgChooseIn *in = (spgChooseIn *) PG_GETARG_POINTER(0);
-	const spgChooseOut *out = (spgChooseOut *) PG_GETARG_POINTER(1);
+	spgChooseOut *out = (spgChooseOut *) PG_GETARG_POINTER(1);
 	const BOX  *inBox = DatumGetBoxP(in->datum);
 	const BOX  *centroid = DatumGetBoxP(in->prefixDatum);
 
@@ -393,7 +393,7 @@ Datum
 spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 {
 	const spgPickSplitIn *in = (spgPickSplitIn *) PG_GETARG_POINTER(0);
-	const spgPickSplitOut *out = (spgPickSplitOut *) PG_GETARG_POINTER(1);
+	spgPickSplitOut *out = (spgPickSplitOut *) PG_GETARG_POINTER(1);
 	BOX		   *centroid;
 	int			median,
 				i;
