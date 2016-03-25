@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * boxtype_spgist.c
+ * geo_spgist.c
  *	  implementation of quad-4d tree over boxes for SP-GiST.
  *
  * Quad-4d is a 4-dimensional analog of quadtree. Quad-4d tree splits
@@ -18,7 +18,40 @@
  *
  * A quadrant has bounds, but sp-gist keeps only 4-d point (box) in inner nodes.
  * We use traversalValue to calculate quadrant bounds from parent's quadrant
- * bounds.
+ * bounds. Let explain with two-dimensional example over points. ASCII-art:
+ *			  |
+ *			  |
+ *	   1	  |		 2
+ *			  |
+ * -----------+-------------
+ *			  |P
+ *		3	  |		 4
+ *			  |
+ *			  |
+ *
+ * '+' with 'A' represents a centroid or, other words, point which splits plane
+ * for 4 quadrants and it strorend in parent node. 1,2,3,4 are labels of
+ * quadrants, each labeling will be the same for all pictures and all centriods,
+ * and in following them will not be shown them in pictures later to prevent
+ * too complicated images. Let we add C - child node (and again, it will split
+ * plane for 4 quads):
+ *
+ *			  |			|
+ *		  ----+---------+---
+ *		X	  |B		|C
+ *			  |			|
+ * -----------+---------+---
+ *			  |P		|A
+ *			  |			|
+ *			  |
+ *			  |
+ *
+ * A and B are points of intersection of lines. So, box PBCA is a bounding box
+ * for points contained in 3-rd (see labeling above). For example, X labeled
+ * point is not a descendace of child node with centroid  C because it must be
+ * in branch of 1-st quad of parent node. So, each node (except root) will have
+ * a limitation in its quadrant. To transfer that limitation the traversalValue
+ * is used.
  *
  * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -38,43 +71,43 @@
 #include "utils/geo_decls.h"
 
 /*
- * compare arbitrary double value a with guaranteed non-infinity
- * double b
+ * compare arbitrary double valuie eith limited precision as it does
+ * any geometric operators.
  */
 static int
-cmp_double(const double a, const double b)
+compareCoordinates(double a, double b)
 {
-	int r = is_infinite(a);
+	int ai = is_infinite(a),
+		bi = is_infinite(b);
 
-	Assert(is_infinite(b) == 0);
-
-	if (r > 0)
-		return 1;
-	else if (r < 0)
-		return -1;
-	else
+	if (ai == bi)
 	{
-		if (FPlt(a, b))
-			return -1;
-		if (FPgt(a, b))
-			return 1;
+		if (ai == 0 && bi == 0)
+		{
+			if (FPlt(a, b))
+				return -1;
+			if (FPgt(a, b))
+				return 1;
+		}
+
+		return 0;
 	}
 
-	return 0;
+	return (ai > bi) ? 1 : -1;
 }
 
+/*
+ * compareDoubles is a comparator for qsort, it should not
+ */
 static int
 compareDoubles(const void *a, const void *b)
 {
 	double		x = *(double *) a;
 	double		y = *(double *) b;
 
-	if (FPlt(x, y))
-		return -1;
-	else if (FPgt(x, y))
-		return 1;
-	else
+	if (x == y)
 		return 0;
+	return (x > y) ? 1 : -1;
 }
 
 typedef struct
@@ -97,13 +130,13 @@ typedef struct
 
 /* Fill RangeBox using BOX */
 inline static void
-boxPointerToRangeBox(BOX *box, RangeBox * rectangle)
+boxPointerToRangeBox(BOX *box, RangeBox * rbox)
 {
-	rectangle->left.low = box->low.x;
-	rectangle->left.high = box->high.x;
+	rbox->left.low = box->low.x;
+	rbox->left.high = box->high.x;
 
-	rectangle->right.low = box->low.y;
-	rectangle->right.high = box->high.y;
+	rbox->right.low = box->low.y;
+	rbox->right.high = box->high.y;
 }
 
 /*-----------------------------------------------------------------
@@ -116,7 +149,7 @@ boxPointerToRangeBox(BOX *box, RangeBox * rectangle)
  *-----------------------------------------------------------------
  */
 static uint8
-getQuadrant(const BOX *centroid, const BOX *inBox)
+getQuadrant(BOX *centroid, BOX *inBox)
 {
 	uint8		quadrant = 0;
 
@@ -142,8 +175,8 @@ getQuadrant(const BOX *centroid, const BOX *inBox)
  * using centroid and quadrant. The following function calculates RangeBox.
  */
 static void
-evalRangeBox(const RangeBox *range_box, const Range *range, const int half1,
-			  const int half2, RangeBox *new_range_box)
+evalRangeBox(RangeBox *range_box, Range *range, int half1,
+			 int half2, RangeBox *new_range_box)
 {
 	if (half1 == 0)
 	{
@@ -176,13 +209,13 @@ evalRangeBox(const RangeBox *range_box, const Range *range, const int half1,
  * using centroid and quadrant.
  */
 static void
-evalRectBox(const RectBox *rect_box, const RangeBox *centroid,
-			 const uint8 quadrant, RectBox * new_rect_box)
+evalRectBox(RectBox *rect_box, RangeBox *centroid,
+			uint8 quadrant, RectBox * new_rect_box)
 {
-	const int	half1 = quadrant & 0x8;
-	const int	half2 = quadrant & 0x4;
-	const int	half3 = quadrant & 0x2;
-	const int	half4 = quadrant & 0x1;
+	int	half1 = quadrant & 0x8;
+	int	half2 = quadrant & 0x4;
+	int	half3 = quadrant & 0x2;
+	int	half4 = quadrant & 0x1;
 
 	evalRangeBox(&rect_box->range_box_x, &centroid->left, half1, half2,
 				  &new_rect_box->range_box_x);
@@ -194,7 +227,7 @@ evalRectBox(const RectBox *rect_box, const RangeBox *centroid,
 /*
  *initialize RangeBox covering all space
  */
-void
+static void
 initializeUnboundedBox(RectBox * rect_box)
 {
 	rect_box->range_box_x.left.low = -get_float8_infinity();
@@ -215,10 +248,10 @@ initializeUnboundedBox(RectBox * rect_box)
  * answer the question: Can this range and any range from range_box intersect?
  */
 static bool
-intersect2D(const Range * range, const RangeBox * range_box)
+intersect2D(Range * range, RangeBox * range_box)
 {
-	const int	p1 = cmp_double(range_box->right.high, range->low);
-	const int	p2 = cmp_double(range_box->left.low, range->high);
+	int	p1 = compareCoordinates(range_box->right.high, range->low);
+	int	p2 = compareCoordinates(range_box->left.low, range->high);
 
 	return (p1 >= 0) && (p2 <= 0);
 }
@@ -228,10 +261,10 @@ intersect2D(const Range * range, const RangeBox * range_box)
  * intersect?
  */
 static bool
-intersect4D(const RangeBox * rectangle, const RectBox * rect_box)
+intersect4D(RangeBox * rectangle, RectBox * rect_box)
 {
-	const int	px = intersect2D(&rectangle->left, &rect_box->range_box_x);
-	const int	py = intersect2D(&rectangle->right, &rect_box->range_box_y);
+	int	px = intersect2D(&rectangle->left, &rect_box->range_box_x);
+	int	py = intersect2D(&rectangle->right, &rect_box->range_box_y);
 
 	return px && py;
 }
@@ -241,10 +274,10 @@ intersect4D(const RangeBox * rectangle, const RectBox * rect_box)
  * answer the question: Can any range from range_box contain this range?
  */
 static bool
-contain2D(const Range * range, const RangeBox * range_box)
+contain2D(Range * range, RangeBox * range_box)
 {
-	const int	p1 = cmp_double(range_box->right.high, range->high);
-	const int	p2 = cmp_double(range_box->left.low, range->low);
+	int	p1 = compareCoordinates(range_box->right.high, range->high);
+	int	p2 = compareCoordinates(range_box->left.low, range->low);
 
 	return (p1 >= 0) && (p2 <=0);
 }
@@ -254,10 +287,10 @@ contain2D(const Range * range, const RangeBox * range_box)
  * answer the question: Can any rectangle from rect_box contain this rectangle?
  */
 static bool
-contain4D(const RangeBox * rectangle, const RectBox * rect_box)
+contain4D(RangeBox * rectangle, RectBox * rect_box)
 {
-	const int	px = contain2D(&rectangle->left, &rect_box->range_box_x);
-	const int	py = contain2D(&rectangle->right, &rect_box->range_box_y);
+	int	px = contain2D(&rectangle->left, &rect_box->range_box_x);
+	int	py = contain2D(&rectangle->right, &rect_box->range_box_y);
 
 	return px && py;
 }
@@ -267,12 +300,12 @@ contain4D(const RangeBox * rectangle, const RectBox * rect_box)
  * answer the question: Can this range contain any range from range_box?
  */
 static bool
-contained2D(const Range * range, const RangeBox * range_box)
+contained2D(Range * range, RangeBox * range_box)
 {
-	const int	p1 = cmp_double(range_box->left.low, range->high);
-	const int	p2 = cmp_double(range_box->left.high, range->low);
-	const int	p3 = cmp_double(range_box->right.low, range->high);
-	const int	p4 = cmp_double(range_box->right.high, range->low);
+	int	p1 = compareCoordinates(range_box->left.low, range->high);
+	int	p2 = compareCoordinates(range_box->left.high, range->low);
+	int	p3 = compareCoordinates(range_box->right.low, range->high);
+	int	p4 = compareCoordinates(range_box->right.high, range->low);
 
 	return (p1 <= 0) && (p2 >= 0) && (p3 <= 0) && (p4 >= 0);
 }
@@ -281,10 +314,10 @@ contained2D(const Range * range, const RangeBox * range_box)
  * answer the question: Can this rectangle contain any rectangle from rect_box?
  */
 static bool
-contained4D(const RangeBox * rectangle, const RectBox * rect_box)
+contained4D(RangeBox * rectangle, RectBox * rect_box)
 {
-	const int	px = contained2D(&rectangle->left, &rect_box->range_box_x);
-	const int	py = contained2D(&rectangle->right, &rect_box->range_box_y);
+	int	px = contained2D(&rectangle->left, &rect_box->range_box_x);
+	int	py = contained2D(&rectangle->right, &rect_box->range_box_y);
 
 	return (px && py);
 }
@@ -295,10 +328,10 @@ contained4D(const RangeBox * rectangle, const RectBox * rect_box)
  * range?
  */
 static bool
-isLower(const Range * range, const RangeBox * range_box)
+isLower(Range * range, RangeBox * range_box)
 {
-	const int	p1 = cmp_double(range_box->left.low, range->low);
-	const int	p2 = cmp_double(range_box->right.low, range->low);
+	int	p1 = compareCoordinates(range_box->left.low, range->low);
+	int	p2 = compareCoordinates(range_box->right.low, range->low);
 
 	return (p1 < 0) && (p2 < 0);
 }
@@ -308,34 +341,34 @@ isLower(const Range * range, const RangeBox * range_box)
  * range?
  */
 static bool
-isHigher(const Range * range, const RangeBox * range_box)
+isHigher(Range * range, RangeBox * range_box)
 {
-	const int	p1 = cmp_double(range_box->left.high, range->high);
-	const int	p2 = cmp_double(range_box->right.high, range->high);
+	int	p1 = compareCoordinates(range_box->left.high, range->high);
+	int	p2 = compareCoordinates(range_box->right.high, range->high);
 
 	return (p1 > 0) && (p2 > 0);
 }
 
 static bool
-left4D(const RangeBox * rectangle, const RectBox * rect_box)
+left4D(RangeBox * rectangle, RectBox * rect_box)
 {
 	return isLower(&rectangle->left, &rect_box->range_box_x);
 }
 
 static bool
-right4D(const RangeBox * rectangle, const RectBox * rect_box)
+right4D(RangeBox * rectangle, RectBox * rect_box)
 {
 	return isHigher(&rectangle->left, &rect_box->range_box_x);
 }
 
 static bool
-below4D(const RangeBox * rectangle, const RectBox * rect_box)
+below4D(RangeBox * rectangle, RectBox * rect_box)
 {
 	return isLower(&rectangle->right, &rect_box->range_box_y);
 }
 
 static bool
-above4D(const RangeBox * rectangle, const RectBox * rect_box)
+above4D(RangeBox * rectangle, RectBox * rect_box)
 {
 	return isHigher(&rectangle->right, &rect_box->range_box_y);
 }
@@ -359,10 +392,10 @@ spg_box_quad_config(PG_FUNCTION_ARGS)
 Datum
 spg_box_quad_choose(PG_FUNCTION_ARGS)
 {
-	const spgChooseIn *in = (spgChooseIn *) PG_GETARG_POINTER(0);
-	spgChooseOut *out = (spgChooseOut *) PG_GETARG_POINTER(1);
-	const BOX  *inBox = DatumGetBoxP(in->datum);
-	const BOX  *centroid = DatumGetBoxP(in->prefixDatum);
+	spgChooseIn		*in = (spgChooseIn *) PG_GETARG_POINTER(0);
+	spgChooseOut	*out = (spgChooseOut *) PG_GETARG_POINTER(1);
+	BOX				*inBox = DatumGetBoxP(in->datum);
+	BOX				*centroid = DatumGetBoxP(in->prefixDatum);
 
 	uint8		quadrant;
 
@@ -392,8 +425,8 @@ spg_box_quad_choose(PG_FUNCTION_ARGS)
 Datum
 spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 {
-	const spgPickSplitIn *in = (spgPickSplitIn *) PG_GETARG_POINTER(0);
-	spgPickSplitOut *out = (spgPickSplitOut *) PG_GETARG_POINTER(1);
+	spgPickSplitIn	*in = (spgPickSplitIn *) PG_GETARG_POINTER(0);
+	spgPickSplitOut	*out = (spgPickSplitOut *) PG_GETARG_POINTER(1);
 	BOX		   *centroid;
 	int			median,
 				i;
@@ -402,9 +435,10 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 	double	   *lowYs = palloc(sizeof(double) * in->nTuples);
 	double	   *highYs = palloc(sizeof(double) * in->nTuples);
 
+	/* calculate median for each 4D coords */
 	for (i = 0; i < in->nTuples; i++)
 	{
-		const BOX  *box = DatumGetBoxP(in->datums[i]);
+		BOX  *box = DatumGetBoxP(in->datums[i]);
 
 		lowXs[i] = box->low.x;
 		highXs[i] = box->high.x;
@@ -426,10 +460,7 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 	centroid->low.y = lowYs[median];
 	centroid->high.y = highYs[median];
 
-	/*
-	 * This block evaluates the median of coordinates of boxes. End.
-	 */
-
+	/* fill output */
 	out->hasPrefix = true;
 	out->prefixDatum = BoxPGetDatum(centroid);
 
@@ -446,8 +477,8 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 
 	for (i = 0; i < in->nTuples; i++)
 	{
-		const BOX  *box = DatumGetBoxP(in->datums[i]);
-		const uint8 quadrant = getQuadrant(centroid, box);
+		BOX  *box = DatumGetBoxP(in->datums[i]);
+		uint8 quadrant = getQuadrant(centroid, box);
 
 		out->leafTupleDatums[i] = BoxPGetDatum(box);
 		out->mapTuplesToNodes[i] = quadrant;
@@ -459,19 +490,15 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 Datum
 spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 {
-	spgInnerConsistentIn *in = (spgInnerConsistentIn *) PG_GETARG_POINTER(0);
-	spgInnerConsistentOut *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
-	int			i;
-
-	MemoryContext oldCtx;
-	RectBox   *rect_box;
-
-	uint8		quadrant;
-
-	RangeBox  *rectangle_centroid = (RangeBox *) palloc(sizeof(RangeBox));
-	RangeBox  *p_query_rect = (RangeBox *) palloc(sizeof(RangeBox));
-
-	boxPointerToRangeBox(DatumGetBoxP(in->prefixDatum), rectangle_centroid);
+	spgInnerConsistentIn   *in = (spgInnerConsistentIn *) PG_GETARG_POINTER(0);
+	spgInnerConsistentOut  *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
+	int						i;
+	MemoryContext			oldCtx;
+	RectBox				   *rect_box;
+	uint8					quadrant;
+	RangeBox			   *rectangle_centroid,
+						   *p_query_rect,
+						   *new_rect_box = NULL;
 
 	if (in->traversalValue)
 	{
@@ -490,6 +517,7 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	}
 
 	out->traversalValues = (void **) palloc(sizeof(void *) * in->nNodes);
+	out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
 
 	if (in->allTheSame)
 	{
@@ -497,7 +525,6 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 		int			nnode;
 
 		out->nNodes = in->nNodes;
-		out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
 
 		/*
 		 * We switch memory context, because we want allocate memory for new
@@ -516,13 +543,17 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 			out->traversalValues[nnode] = new_rect_box;
 			out->nodeNumbers[nnode] = nnode;
 		}
+
 		/* Switch back */
 		MemoryContextSwitchTo(oldCtx);
 		PG_RETURN_VOID();
 	}
 
+	rectangle_centroid = (RangeBox *) palloc(sizeof(RangeBox));
+	p_query_rect = (RangeBox *) palloc(sizeof(RangeBox));
+	boxPointerToRangeBox(DatumGetBoxP(in->prefixDatum), rectangle_centroid);
+
 	out->nNodes = 0;
-	out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
 
 	/*
 	 * We switch memory context, because we want to allocate memory for new
@@ -533,17 +564,17 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 	for (quadrant = 0; quadrant < in->nNodes; quadrant++)
 	{
-		RectBox   *new_rect_box;
 		bool	   flag = true;
 
-		new_rect_box = (RectBox *) palloc(sizeof(RectBox));
+		if (new_rect_box == NULL)
+			new_rect_box = (RectBox *) palloc(sizeof(RectBox));
 
 		/* Calculates 4-dim RectBox */
 		evalRectBox(rect_box, rectangle_centroid, quadrant, new_rect_box);
 
 		for (i = 0; flag && i < in->nkeys; i++)
 		{
-			const StrategyNumber strategy = in->scankeys[i].sk_strategy;
+			StrategyNumber strategy = in->scankeys[i].sk_strategy;
 
 			boxPointerToRangeBox(DatumGetBoxP(in->scankeys[i].sk_argument),
 								 p_query_rect);
@@ -588,8 +619,12 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 			out->traversalValues[out->nNodes] = new_rect_box;
 			out->nodeNumbers[out->nNodes] = quadrant;
 			out->nNodes++;
+			new_rect_box = NULL;
 		}
 	}
+
+	if (new_rect_box)
+		pfree(new_rect_box);
 
 	MemoryContextSwitchTo(oldCtx);
 	PG_RETURN_VOID();
@@ -613,8 +648,8 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 	/* Perform the required comparison(s) */
 	for (i = 0; flag && i < in->nkeys; i++)
 	{
-		const StrategyNumber strategy = in->scankeys[i].sk_strategy;
-		const Datum keyDatum = in->scankeys[i].sk_argument;
+		StrategyNumber strategy = in->scankeys[i].sk_strategy;
+		Datum keyDatum = in->scankeys[i].sk_argument;
 
 		switch (strategy)
 		{
