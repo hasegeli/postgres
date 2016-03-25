@@ -461,6 +461,18 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 						   *p_query_rect,
 						   *new_rect_box = NULL;
 
+	out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
+
+	if (in->allTheSame)
+	{
+		/* Report that all nodes should be visited */
+		out->nNodes = in->nNodes;
+		for (i = 0; i < in->nNodes; i++)
+			out->nodeNumbers[i] = i;
+
+		PG_RETURN_VOID();
+	}
+
 	if (in->traversalValue)
 	{
 		/* Here we get 4D bounded box (RectBox) from the traversal value. */
@@ -476,44 +488,12 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 		initializeUnboundedBox(rect_box);
 	}
 
-	out->traversalValues = (void **) palloc(sizeof(void *) * in->nNodes);
-	out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
-
-	if (in->allTheSame)
-	{
-		/* Report that all nodes should be visited */
-		int			nnode;
-
-		out->nNodes = in->nNodes;
-
-		/*
-		 * We switch memory context, because we want allocate memory for new
-		 * traversal values for RectBox and transmit these pieces of memory
-		 * to further calls of spg_box_quad_inner_consistent.
-		 */
-		oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
-
-		for (nnode = 0; nnode < in->nNodes; nnode++)
-		{
-			RectBox   *new_rect_box;
-
-			new_rect_box = (RectBox *) palloc(sizeof(RectBox));
-			memcpy(new_rect_box, rect_box, sizeof(RectBox));
-
-			out->traversalValues[nnode] = new_rect_box;
-			out->nodeNumbers[nnode] = nnode;
-		}
-
-		/* Switch back */
-		MemoryContextSwitchTo(oldCtx);
-		PG_RETURN_VOID();
-	}
-
 	rectangle_centroid = (RangeBox *) palloc(sizeof(RangeBox));
 	p_query_rect = (RangeBox *) palloc(sizeof(RangeBox));
 	boxPointerToRangeBox(DatumGetBoxP(in->prefixDatum), rectangle_centroid);
 
 	out->nNodes = 0;
+	out->traversalValues = (void **) palloc(sizeof(void *) * in->nNodes);
 
 	/*
 	 * We switch memory context, because we want to allocate memory for new
