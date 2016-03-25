@@ -1,63 +1,72 @@
 /*-------------------------------------------------------------------------
  *
  * geo_spgist.c
- *	  implementation of quad-4d tree over boxes for SP-GiST.
+ *	  SP-GiST implementation of 4-dimensional quad tree over boxes
  *
- * Quad-4d is a 4-dimensional analog of quadtree. Quad-4d tree splits
- * 4-dimensional space into 16 quadrants. Each inner node of a quad-4d tree
- * contains a box. We call these boxes centroids. Main purpose of the boxtype
- * index is to tell, for a given box, which other boxes intersect it,
- * contain or are contained by it, etc.
+ * This module provides SP-GiST implementation for boxes using quad tree
+ * analogy in 4-dimensional space.  SP-GiST doesn't allow indexing of
+ * overlapping objects.  We are making 2D objects never-overlapping in
+ * 4D space.  This technique has some benefits compared to traditional
+ * R-Tree which is implemented as GiST.  The performance tests reveal
+ * that this technique especially beneficial with too much overlapping
+ * objects, so called "spaghetti data".
  *
- * For example consider the case of intersection. When recursion descends
- * deeper and deeper down the tree, all quadrants in the current node will
- * eventually be passed to the intersect4D function call. This function answers
- * the question: can any box from this quadrant intersect with given
- * box (query box)? If yes, then this quadrant will be walked. If no, then this
- * quadrant will be rejected.
+ * Unlike the original quad tree, we are splitting the tree into 16
+ * quadrants in 4D space.  It is easier to imagine it as splitting space
+ * two times into 4:
  *
- * A quadrant has bounds, but sp-gist keeps only 4-d point (box) in inner nodes.
- * We use traversalValue to calculate quadrant bounds from parent's quadrant
- * bounds. Let explain with two-dimensional example over points. ASCII-art:
- *			  |
- *			  |
- *	   1	  |		 2
- *			  |
- * -----------+-------------
- *			  |P
- *		3	  |		 4
- *			  |
- *			  |
+ *				|	   |
+ *				|	   |
+ *				| -----+-----
+ *				|	   |
+ *				|	   |
+ * -------------+-------------
+ *				|
+ *				|
+ *				|
+ *				|
+ *				|
  *
- * '+' with 'A' represents a centroid or, other words, point which splits plane
- * for 4 quadrants and it strorend in parent node. 1,2,3,4 are labels of
- * quadrants, each labeling will be the same for all pictures and all centriods,
- * and in following them will not be shown them in pictures later to prevent
- * too complicated images. Let we add C - child node (and again, it will split
- * plane for 4 quads):
+ * We are using box datatype as the prefix, but we are treating them
+ * as points in 4-dimensional space, because 2D boxes are not not enough
+ * to represent the quadrant boundaries in 4D space.  They however are
+ * sufficient to point out the additional boundaries of the next
+ * quadrant.
  *
- *			  |			|
- *		  ----+---------+---
- *		X	  |B		|C
- *			  |			|
- * -----------+---------+---
- *			  |P		|A
- *			  |			|
- *			  |
- *			  |
+ * We are using traversal values provided by SP-GiST to calculate and
+ * to store the bounds of the quadrants, while traversing into the tree.
+ * Traversal value has all the boundaries in the 4D space, and is is
+ * capable of transferring the required boundaries to the following
+ * traversal values.  In conclusion, three things are necessary
+ * to calculate the next traversal value:
  *
- * A and B are points of intersection of lines. So, box PBCA is a bounding box
- * for points contained in 3-rd (see labeling above). For example, X labeled
- * point is not a descendace of child node with centroid  C because it must be
- * in branch of 1-st quad of parent node. So, each node (except root) will have
- * a limitation in its quadrant. To transfer that limitation the traversalValue
- * is used.
+ *	(1) the traversal value of the parent
+ *	(2) the quadrant of the current node
+ *	(3) the prefix of the current node
  *
- * Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+ * If we visualize them on our simplified drawing (see the drawing above);
+ * transfered boundaries of (1) would be the outer axis, relevant part
+ * of (2) would be the up right part of the other axis, and (3) would be
+ * the inner axis.
+ *
+ * For example, consider the case of intersection.  When recursion
+ * descends deeper and deeper down the tree, all quadrants in
+ * the current node will be checked for intersection.  The boundaries
+ * will be re-calculated for all quadrants.  Intersection check answers
+ * the question: can any box from this quadrant intersect with the given
+ * box?  If yes, then this quadrant will be walked.  If no, then this
+ * quadrant will be skipped.
+ *
+ * This method provides restrictions for minimum and maximum values of
+ * every dimension of every corner of the box on every level of the tree
+ * except the root.  For the root node, we are setting the boundaries
+ * that we don't yet have as infinity.
+ *
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *			src/backend/utils/adt/boxtype_spgist.c
+ *			src/backend/utils/adt/geo_spgist.c
  *
  *-------------------------------------------------------------------------
  */
@@ -71,7 +80,11 @@
 #include "utils/geo_decls.h"
 
 /*
- * compareDoubles is a comparator for qsort, it should not
+ * Comparator for qsort
+ *
+ * We don't need to use the floating point macros in here, because this
+ * is going only going to be used in a place to effect the performance
+ * of the index, not the correctness.
  */
 static int
 compareDoubles(const void *a, const void *b)
@@ -102,7 +115,13 @@ typedef struct
 	RangeBox	range_box_y;
 }	RectBox;
 
-/* Fill RangeBox using BOX */
+/*
+ * Fill RangeBox using BOX
+ *
+ * We are turning the BOX to our structures to emphasise their function
+ * of representing points in 4D space.  It also is more convenient to
+ * access the values with this structure.
+ */
 inline static void
 boxPointerToRangeBox(BOX *box, RangeBox * rbox)
 {
@@ -113,14 +132,13 @@ boxPointerToRangeBox(BOX *box, RangeBox * rbox)
 	rbox->right.high = box->high.y;
 }
 
-/*-----------------------------------------------------------------
- * quadrant is 8bits unsigned integer with bits:
- * [0,0,0,0,a,b,c,d] where
- * a is 1 if inBox->low.x > centroid->low.x
- * b is 1 if inBox->high.x > centroid->high.x
- * c is 1 if inBox->low.y > centroid->low.y
- * d is 1 if inBox->high.y > centroid->high.y
- *-----------------------------------------------------------------
+/*
+ * Calculate the quadrant
+ *
+ * The quadrant is 8 bit unsigned integer with 4 least bits in use.
+ * This function accepts BOXes as input.  They are not casted to
+ * RangeBoxes, yet.  All 4 bits are set by comparing a corner of the box.
+ * This makes 16 quadrants in total.
  */
 static uint8
 getQuadrant(BOX *centroid, BOX *inBox)
@@ -142,11 +160,13 @@ getQuadrant(BOX *centroid, BOX *inBox)
 	return quadrant;
 }
 
-
 /*
- * All centroids in q4d tree are bounded by RectBox, but SP-Gist only keeps
- * boxes. When we walk into depth, we must calculate RectBox,
- * using centroid and quadrant. The following function calculates RangeBox.
+ * Fill the RangeBox
+ *
+ * All centroids are bounded by RectBox, but SP-GiST only keeps
+ * boxes.  When we are traversing the tree, we must calculate RectBox,
+ * using centroid and quadrant.  This following calculates the inners
+ * part of it, the RangeBox.
  */
 static void
 evalRangeBox(RangeBox *range_box, Range *range, int half1,
@@ -175,12 +195,10 @@ evalRangeBox(RangeBox *range_box, Range *range, int half1,
 	}
 }
 
-
-
 /*
- * All centroids in q4d tree are bounded by RectBox, but SP-Gist only keeps
- * boxes. When we walk into depth, we must calculate RectBox,
- * using centroid and quadrant.
+ * Fill the RectBox
+ *
+ * This functions calculates the actual RectBox using the routine above.
  */
 static void
 evalRectBox(RectBox *rect_box, RangeBox *centroid,
@@ -199,7 +217,10 @@ evalRectBox(RectBox *rect_box, RangeBox *centroid,
 
 
 /*
- *initialize RangeBox covering all space
+ * Initialize RangeBox covering all space
+ *
+ * In the beginning, we don't have any restrictions.  We have to
+ * initialize the struct to cover the whole 4D space.
  */
 static void
 initializeUnboundedBox(RectBox *rect_box)
@@ -217,10 +238,7 @@ initializeUnboundedBox(RectBox *rect_box)
 	rect_box->range_box_y.right.high = get_float8_infinity();
 }
 
-
-/*
- * answer the question: Can this range and any range from range_box intersect?
- */
+/* Can this range and any range from range_box intersect? */
 static bool
 intersect2D(Range *range, RangeBox *range_box)
 {
@@ -228,10 +246,7 @@ intersect2D(Range *range, RangeBox *range_box)
 		   FPle(range_box->left.low, range->high);
 }
 
-/*
- * answer the question: Can this rectangle and any rectangle from rect_box
- * intersect?
- */
+/* Can this rectangle and any rectangle from rect_box intersect? */
 static bool
 intersect4D(RangeBox * rectangle, RectBox * rect_box)
 {
@@ -239,10 +254,7 @@ intersect4D(RangeBox * rectangle, RectBox * rect_box)
 		   intersect2D(&rectangle->right, &rect_box->range_box_y);
 }
 
-
-/*
- * answer the question: Can any range from range_box contain this range?
- */
+/* Can any range from range_box contain this range? */
 static bool
 contain2D(Range *range, RangeBox *range_box)
 {
@@ -250,10 +262,7 @@ contain2D(Range *range, RangeBox *range_box)
 		   FPle(range_box->left.low, range->low);
 }
 
-
-/*
- * answer the question: Can any rectangle from rect_box contain this rectangle?
- */
+/* Can any rectangle from rect_box contain this rectangle? */
 static bool
 contain4D(RangeBox *range_box, RectBox *rect_box)
 {
@@ -261,10 +270,7 @@ contain4D(RangeBox *range_box, RectBox *rect_box)
 		   contain2D(&range_box->right, &rect_box->range_box_y);
 }
 
-
-/*
- * answer the question: Can this range contain any range from range_box?
- */
+/* Can this range contain any range from range_box?  */
 static bool
 contained2D(Range *range, RangeBox *range_box)
 {
@@ -274,9 +280,7 @@ contained2D(Range *range, RangeBox *range_box)
 		   FPge(range_box->right.high, range->low);
 }
 
-/*
- * answer the question: Can this rectangle contain any rectangle from rect_box?
- */
+/* Can this rectangle contain any rectangle from rect_box?  */
 static bool
 contained4D(RangeBox *range_box, RectBox *rect_box)
 {
@@ -284,11 +288,7 @@ contained4D(RangeBox *range_box, RectBox *rect_box)
 		   contained2D(&range_box->right, &rect_box->range_box_y);
 }
 
-
-/*
- * answer the question: Can any range from range_box to be lower than this
- * range?
- */
+/* Can any range from range_box to be lower than this range? */
 static bool
 isLower(Range *range, RangeBox *range_box)
 {
@@ -296,10 +296,7 @@ isLower(Range *range, RangeBox *range_box)
 		   FPlt(range_box->right.low, range->low);
 }
 
-/*
- * answer the question: Can any range from range_box to be higher than this
- * range?
- */
+/* Can any range from range_box to be higher than this range? */
 static bool
 isHigher(Range *range, RangeBox *range_box)
 {
@@ -332,7 +329,7 @@ above4D(RangeBox *range_box, RectBox *rect_box)
 }
 
 /*
- * SP-GiST 'config' interface function.
+ * SP-GiST config function
  */
 Datum
 spg_box_quad_config(PG_FUNCTION_ARGS)
@@ -340,13 +337,16 @@ spg_box_quad_config(PG_FUNCTION_ARGS)
 	spgConfigOut *cfg = (spgConfigOut *) PG_GETARG_POINTER(1);
 
 	cfg->prefixType = BOXOID;
-	cfg->labelType = VOIDOID;	/* we don't need node labels */
+	cfg->labelType = VOIDOID;	/* We don't need node labels. */
 	cfg->canReturnData = true;
 	cfg->longValuesOK = false;
+
 	PG_RETURN_VOID();
 }
 
-
+/*
+ * SP-GiST choose function
+ */
 Datum
 spg_box_quad_choose(PG_FUNCTION_ARGS)
 {
@@ -376,9 +376,10 @@ spg_box_quad_choose(PG_FUNCTION_ARGS)
 }
 
 /*
- * spg_box_quad_picksplit
- * splits a list of box into quadrants by choosing a central 4D point as
- * the median of coordinates of boxes
+ * SP-GiST pick-split function
+ *
+ * It splits a list of boxes into quadrants by choosing a central 4D
+ * point as the median of the coordinates of the boxes.
  */
 Datum
 spg_box_quad_picksplit(PG_FUNCTION_ARGS)
@@ -393,7 +394,7 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 	double	   *lowYs = palloc(sizeof(double) * in->nTuples);
 	double	   *highYs = palloc(sizeof(double) * in->nTuples);
 
-	/* calculate median for each 4D coords */
+	/* Calculate median of all 4D coordinates */
 	for (i = 0; i < in->nTuples; i++)
 	{
 		BOX  *box = DatumGetBoxP(in->datums[i]);
@@ -418,21 +419,20 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 	centroid->low.y = lowYs[median];
 	centroid->high.y = highYs[median];
 
-	/* fill output */
+	/* Fill the output */
 	out->hasPrefix = true;
 	out->prefixDatum = BoxPGetDatum(centroid);
 
 	out->nNodes = 16;
-	out->nodeLabels = NULL;		/* we don't need node labels */
+	out->nodeLabels = NULL;		/* We don't need node labels. */
 
 	out->mapTuplesToNodes = palloc(sizeof(int) * in->nTuples);
 	out->leafTupleDatums = palloc(sizeof(Datum) * in->nTuples);
 
 	/*
-	 * Assign ranges to corresponding nodes according to quadrants relative to
-	 * "centroid" range.
+	 * Assign ranges to corresponding nodes according to quadrants
+	 * relative to the "centroid" range
 	 */
-
 	for (i = 0; i < in->nTuples; i++)
 	{
 		BOX  *box = DatumGetBoxP(in->datums[i]);
@@ -445,6 +445,9 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+/*
+ * SP-GiST inner consistent function
+ */
 Datum
 spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 {
@@ -460,16 +463,15 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 	if (in->traversalValue)
 	{
-		/* Here we get 4 dimension bound box (RectBox) from traversalValue */
+		/* Here we get 4D bounded box (RectBox) from the traversal value. */
 		rect_box = in->traversalValue;
 	}
 	else
 	{
 		/*
-		 * Here we initialize rect_box, because we have just begun to walk
-		 * through the tree
+		 * Here we initialize the bounded box, because we have just
+		 * begun to walk the tree.
 		 */
-
 		rect_box = (RectBox *) palloc(sizeof(RectBox));
 		initializeUnboundedBox(rect_box);
 	}
@@ -516,7 +518,7 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	/*
 	 * We switch memory context, because we want to allocate memory for new
 	 * traversal values (new_rect_box) and pass these pieces of memory to
-	 * further call of spg_box_quad_inner_consistent.
+	 * further call of this function..
 	 */
 	oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
 
@@ -527,7 +529,7 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 		if (new_rect_box == NULL)
 			new_rect_box = (RectBox *) palloc(sizeof(RectBox));
 
-		/* Calculates 4-dim RectBox */
+		/* Calculate 4D RectBox */
 		evalRectBox(rect_box, rectangle_centroid, quadrant, new_rect_box);
 
 		for (i = 0; flag && i < in->nkeys; i++)
@@ -568,7 +570,7 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 					break;
 
 				default:
-					elog(ERROR, "This operation doesn't support by SP-Gist");
+					elog(ERROR, "unrecognized strategy: %d", strategy);
 			}
 		}
 
@@ -588,6 +590,9 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+/*
+ * SP-GiST inner consistent function
+ */
 Datum
 spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 {
@@ -597,7 +602,7 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 	bool		flag = true;
 	int			i;
 
-	/* all tests are exact */
+	/* All tests are exact. */
 	out->recheck = false;
 
 	/* leafDatum is what it is... */
@@ -654,7 +659,7 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 				break;
 
 			default:
-				elog(ERROR, "This type operation doesn't support by sp-gist");
+				elog(ERROR, "unrecognized strategy: %d", strategy);
 		}
 	}
 
