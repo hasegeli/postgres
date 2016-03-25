@@ -71,32 +71,6 @@
 #include "utils/geo_decls.h"
 
 /*
- * compare arbitrary double valuie eith limited precision as it does
- * any geometric operators.
- */
-static int
-compareCoordinates(double a, double b)
-{
-	int ai = is_infinite(a),
-		bi = is_infinite(b);
-
-	if (ai == bi)
-	{
-		if (ai == 0 && bi == 0)
-		{
-			if (FPlt(a, b))
-				return -1;
-			if (FPgt(a, b))
-				return 1;
-		}
-
-		return 0;
-	}
-
-	return (ai > bi) ? 1 : -1;
-}
-
-/*
  * compareDoubles is a comparator for qsort, it should not
  */
 static int
@@ -228,7 +202,7 @@ evalRectBox(RectBox *rect_box, RangeBox *centroid,
  *initialize RangeBox covering all space
  */
 static void
-initializeUnboundedBox(RectBox * rect_box)
+initializeUnboundedBox(RectBox *rect_box)
 {
 	rect_box->range_box_x.left.low = -get_float8_infinity();
 	rect_box->range_box_x.left.high = get_float8_infinity();
@@ -248,12 +222,10 @@ initializeUnboundedBox(RectBox * rect_box)
  * answer the question: Can this range and any range from range_box intersect?
  */
 static bool
-intersect2D(Range * range, RangeBox * range_box)
+intersect2D(Range *range, RangeBox *range_box)
 {
-	int	p1 = compareCoordinates(range_box->right.high, range->low);
-	int	p2 = compareCoordinates(range_box->left.low, range->high);
-
-	return (p1 >= 0) && (p2 <= 0);
+	return FPge(range_box->right.high, range->low) &&
+		   FPle(range_box->left.low, range->high);
 }
 
 /*
@@ -263,10 +235,8 @@ intersect2D(Range * range, RangeBox * range_box)
 static bool
 intersect4D(RangeBox * rectangle, RectBox * rect_box)
 {
-	int	px = intersect2D(&rectangle->left, &rect_box->range_box_x);
-	int	py = intersect2D(&rectangle->right, &rect_box->range_box_y);
-
-	return px && py;
+	return intersect2D(&rectangle->left, &rect_box->range_box_x) &&
+		   intersect2D(&rectangle->right, &rect_box->range_box_y);
 }
 
 
@@ -274,12 +244,10 @@ intersect4D(RangeBox * rectangle, RectBox * rect_box)
  * answer the question: Can any range from range_box contain this range?
  */
 static bool
-contain2D(Range * range, RangeBox * range_box)
+contain2D(Range *range, RangeBox *range_box)
 {
-	int	p1 = compareCoordinates(range_box->right.high, range->high);
-	int	p2 = compareCoordinates(range_box->left.low, range->low);
-
-	return (p1 >= 0) && (p2 <=0);
+	return FPge(range_box->right.high, range->high) &&
+		   FPle(range_box->left.low, range->low);
 }
 
 
@@ -287,12 +255,10 @@ contain2D(Range * range, RangeBox * range_box)
  * answer the question: Can any rectangle from rect_box contain this rectangle?
  */
 static bool
-contain4D(RangeBox * rectangle, RectBox * rect_box)
+contain4D(RangeBox *range_box, RectBox *rect_box)
 {
-	int	px = contain2D(&rectangle->left, &rect_box->range_box_x);
-	int	py = contain2D(&rectangle->right, &rect_box->range_box_y);
-
-	return px && py;
+	return contain2D(&range_box->left, &rect_box->range_box_x) &&
+		   contain2D(&range_box->right, &rect_box->range_box_y);
 }
 
 
@@ -300,26 +266,22 @@ contain4D(RangeBox * rectangle, RectBox * rect_box)
  * answer the question: Can this range contain any range from range_box?
  */
 static bool
-contained2D(Range * range, RangeBox * range_box)
+contained2D(Range *range, RangeBox *range_box)
 {
-	int	p1 = compareCoordinates(range_box->left.low, range->high);
-	int	p2 = compareCoordinates(range_box->left.high, range->low);
-	int	p3 = compareCoordinates(range_box->right.low, range->high);
-	int	p4 = compareCoordinates(range_box->right.high, range->low);
-
-	return (p1 <= 0) && (p2 >= 0) && (p3 <= 0) && (p4 >= 0);
+	return FPle(range_box->left.low, range->high) &&
+		   FPge(range_box->left.high, range->low) &&
+		   FPle(range_box->right.low, range->high) &&
+		   FPge(range_box->right.high, range->low);
 }
 
 /*
  * answer the question: Can this rectangle contain any rectangle from rect_box?
  */
 static bool
-contained4D(RangeBox * rectangle, RectBox * rect_box)
+contained4D(RangeBox *range_box, RectBox *rect_box)
 {
-	int	px = contained2D(&rectangle->left, &rect_box->range_box_x);
-	int	py = contained2D(&rectangle->right, &rect_box->range_box_y);
-
-	return (px && py);
+	return contained2D(&range_box->left, &rect_box->range_box_x) &&
+		   contained2D(&range_box->right, &rect_box->range_box_y);
 }
 
 
@@ -328,12 +290,10 @@ contained4D(RangeBox * rectangle, RectBox * rect_box)
  * range?
  */
 static bool
-isLower(Range * range, RangeBox * range_box)
+isLower(Range *range, RangeBox *range_box)
 {
-	int	p1 = compareCoordinates(range_box->left.low, range->low);
-	int	p2 = compareCoordinates(range_box->right.low, range->low);
-
-	return (p1 < 0) && (p2 < 0);
+	return FPlt(range_box->left.low, range->low) &&
+		   FPlt(range_box->right.low, range->low);
 }
 
 /*
@@ -341,36 +301,34 @@ isLower(Range * range, RangeBox * range_box)
  * range?
  */
 static bool
-isHigher(Range * range, RangeBox * range_box)
+isHigher(Range *range, RangeBox *range_box)
 {
-	int	p1 = compareCoordinates(range_box->left.high, range->high);
-	int	p2 = compareCoordinates(range_box->right.high, range->high);
-
-	return (p1 > 0) && (p2 > 0);
+	return FPgt(range_box->left.high, range->high) &&
+		   FPgt(range_box->right.high, range->high);
 }
 
 static bool
-left4D(RangeBox * rectangle, RectBox * rect_box)
+left4D(RangeBox *range_box, RectBox *rect_box)
 {
-	return isLower(&rectangle->left, &rect_box->range_box_x);
+	return isLower(&range_box->left, &rect_box->range_box_x);
 }
 
 static bool
-right4D(RangeBox * rectangle, RectBox * rect_box)
+right4D(RangeBox *range_box, RectBox *rect_box)
 {
-	return isHigher(&rectangle->left, &rect_box->range_box_x);
+	return isHigher(&range_box->left, &rect_box->range_box_x);
 }
 
 static bool
-below4D(RangeBox * rectangle, RectBox * rect_box)
+below4D(RangeBox *range_box, RectBox *rect_box)
 {
-	return isLower(&rectangle->right, &rect_box->range_box_y);
+	return isLower(&range_box->right, &rect_box->range_box_y);
 }
 
 static bool
-above4D(RangeBox * rectangle, RectBox * rect_box)
+above4D(RangeBox *range_box, RectBox *rect_box)
 {
-	return isHigher(&rectangle->right, &rect_box->range_box_y);
+	return isHigher(&range_box->right, &rect_box->range_box_y);
 }
 
 /*
