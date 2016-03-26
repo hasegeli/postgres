@@ -49,11 +49,11 @@
  * of (2) would be the up right part of the other axis, and (3) would be
  * the inner axis.
  *
- * For example, consider the case of intersection.  When recursion
+ * For example, consider the case of overlapping.  When recursion
  * descends deeper and deeper down the tree, all quadrants in
- * the current node will be checked for intersection.  The boundaries
- * will be re-calculated for all quadrants.  Intersection check answers
- * the question: can any box from this quadrant intersect with the given
+ * the current node will be checked for overlapping.  The boundaries
+ * will be re-calculated for all quadrants.  Overlap check answers
+ * the question: can any box from this quadrant overlap with the given
  * box?  If yes, then this quadrant will be walked.  If no, then this
  * quadrant will be skipped.
  *
@@ -116,23 +116,6 @@ typedef struct
 }	RectBox;
 
 /*
- * Fill RangeBox using BOX
- *
- * We are turning the BOX to our structures to emphasise their function
- * of representing points in 4D space.  It also is more convenient to
- * access the values with this structure.
- */
-inline static void
-boxPointerToRangeBox(BOX *box, RangeBox * rbox)
-{
-	rbox->left.low = box->low.x;
-	rbox->left.high = box->high.x;
-
-	rbox->right.low = box->low.y;
-	rbox->right.high = box->high.y;
-}
-
-/*
  * Calculate the quadrant
  *
  * The quadrant is 8 bit unsigned integer with 4 least bits in use.
@@ -161,171 +144,182 @@ getQuadrant(BOX *centroid, BOX *inBox)
 }
 
 /*
- * Fill the RangeBox
+ * Get RangeBox using BOX
  *
- * All centroids are bounded by RectBox, but SP-GiST only keeps
- * boxes.  When we are traversing the tree, we must calculate RectBox,
- * using centroid and quadrant.  This following calculates the inners
- * part of it, the RangeBox.
+ * We are turning the BOX to our structures to emphasize their function
+ * of representing points in 4D space.  It also is more convenient to
+ * access the values with this structure.
  */
-static void
-evalRangeBox(RangeBox *range_box, Range *range, int half1,
-			 int half2, RangeBox *new_range_box)
+static RangeBox *
+getRangeBox(BOX *box)
 {
-	if (half1 == 0)
-	{
-		new_range_box->left.high = range->low;
-		new_range_box->left.low = range_box->left.low;
-	}
-	else
-	{
-		new_range_box->left.low = range->low;
-		new_range_box->left.high = range_box->left.high;
-	}
+	RangeBox   *range_box = (RangeBox *) palloc(sizeof(RangeBox));
 
-	if (half2 == 0)
-	{
-		new_range_box->right.high = range->high;
-		new_range_box->right.low = range_box->right.low;
-	}
-	else
-	{
-		new_range_box->right.low = range->high;
-		new_range_box->right.high = range_box->right.high;
-	}
+	range_box->left.low = box->low.x;
+	range_box->left.high = box->high.x;
+
+	range_box->right.low = box->low.y;
+	range_box->right.high = box->high.y;
+
+	return range_box;
 }
 
 /*
- * Fill the RectBox
- *
- * This functions calculates the actual RectBox using the routine above.
- */
-static void
-evalRectBox(RectBox *rect_box, RangeBox *centroid,
-			uint8 quadrant, RectBox * new_rect_box)
-{
-	int	half1 = quadrant & 0x8;
-	int	half2 = quadrant & 0x4;
-	int	half3 = quadrant & 0x2;
-	int	half4 = quadrant & 0x1;
-
-	evalRangeBox(&rect_box->range_box_x, &centroid->left, half1, half2,
-				  &new_rect_box->range_box_x);
-	evalRangeBox(&rect_box->range_box_y, &centroid->right, half3, half4,
-				  &new_rect_box->range_box_y);
-}
-
-
-/*
- * Initialize RangeBox covering all space
+ * Initialize the traversal value
  *
  * In the beginning, we don't have any restrictions.  We have to
  * initialize the struct to cover the whole 4D space.
  */
-static void
-initializeUnboundedBox(RectBox *rect_box)
+static RectBox *
+initRectBox()
 {
-	rect_box->range_box_x.left.low = -get_float8_infinity();
-	rect_box->range_box_x.left.high = get_float8_infinity();
+	RectBox	   *rect_box = (RectBox *) palloc(sizeof(RectBox));
+	double		infinity = get_float8_infinity();
 
-	rect_box->range_box_x.right.low = -get_float8_infinity();
-	rect_box->range_box_x.right.high = get_float8_infinity();
+	rect_box->range_box_x.left.low = -infinity;
+	rect_box->range_box_x.left.high = infinity;
 
-	rect_box->range_box_y.left.low = -get_float8_infinity();
-	rect_box->range_box_y.left.high = get_float8_infinity();
+	rect_box->range_box_x.right.low = -infinity;
+	rect_box->range_box_x.right.high = infinity;
 
-	rect_box->range_box_y.right.low = -get_float8_infinity();
-	rect_box->range_box_y.right.high = get_float8_infinity();
+	rect_box->range_box_y.left.low = -infinity;
+	rect_box->range_box_y.left.high = infinity;
+
+	rect_box->range_box_y.right.low = -infinity;
+	rect_box->range_box_y.right.high = infinity;
+
+	return rect_box;
 }
 
-/* Can this range and any range from range_box intersect? */
-static bool
-intersect2D(Range *range, RangeBox *range_box)
+/*
+ * Calculate the next traversal value
+ *
+ * All centroids are bounded by RectBox, but SP-GiST only keeps
+ * boxes.  When we are traversing the tree, we must calculate RectBox,
+ * using centroid and quadrant.
+ */
+static RectBox *
+nextRectBox(RectBox *rect_box, RangeBox *centroid, uint8 quadrant)
 {
-	return FPge(range_box->right.high, range->low) &&
-		   FPle(range_box->left.low, range->high);
+	RectBox	   *next_rect_box = (RectBox *) palloc(sizeof(RectBox));
+
+	memcpy(next_rect_box, rect_box, sizeof(RectBox));
+
+	if (quadrant & 0x8)
+		next_rect_box->range_box_x.left.low = centroid->left.low;
+	else
+		next_rect_box->range_box_x.left.high = centroid->left.low;
+
+	if (quadrant & 0x4)
+		next_rect_box->range_box_x.right.low = centroid->left.high;
+	else
+		next_rect_box->range_box_x.right.high = centroid->left.high;
+
+	if (quadrant & 0x2)
+		next_rect_box->range_box_y.left.low = centroid->right.low;
+	else
+		next_rect_box->range_box_y.left.high = centroid->right.low;
+
+	if (quadrant & 0x1)
+		next_rect_box->range_box_y.right.low = centroid->right.high;
+	else
+		next_rect_box->range_box_y.right.high = centroid->right.high;
+
+	return next_rect_box;
 }
 
-/* Can this rectangle and any rectangle from rect_box intersect? */
+/* Can any range from range_box overlap with this argument? */
 static bool
-intersect4D(RangeBox * rectangle, RectBox * rect_box)
+overlap2D(RangeBox *range_box, Range *query)
 {
-	return intersect2D(&rectangle->left, &rect_box->range_box_x) &&
-		   intersect2D(&rectangle->right, &rect_box->range_box_y);
+	return FPge(range_box->right.high, query->low) &&
+		   FPle(range_box->left.low, query->high);
 }
 
-/* Can any range from range_box contain this range? */
+/* Can any rectangle from rect_box overlap with this argument? */
 static bool
-contain2D(Range *range, RangeBox *range_box)
+overlap4D(RectBox *rect_box, RangeBox *query)
 {
-	return FPge(range_box->right.high, range->high) &&
-		   FPle(range_box->left.low, range->low);
+	return overlap2D(&rect_box->range_box_x, &query->left) &&
+		   overlap2D(&rect_box->range_box_y, &query->right);
 }
 
-/* Can any rectangle from rect_box contain this rectangle? */
+/* Can any range from range_box contain this argument? */
 static bool
-contain4D(RangeBox *range_box, RectBox *rect_box)
+contain2D(RangeBox *range_box, Range *query)
 {
-	return contain2D(&range_box->left, &rect_box->range_box_x) &&
-		   contain2D(&range_box->right, &rect_box->range_box_y);
+	return FPge(range_box->right.high, query->high) &&
+		   FPle(range_box->left.low, query->low);
 }
 
-/* Can this range contain any range from range_box?  */
+/* Can any rectangle from rect_box contain this argument? */
 static bool
-contained2D(Range *range, RangeBox *range_box)
+contain4D(RectBox *rect_box, RangeBox * query)
 {
-	return FPle(range_box->left.low, range->high) &&
-		   FPge(range_box->left.high, range->low) &&
-		   FPle(range_box->right.low, range->high) &&
-		   FPge(range_box->right.high, range->low);
+	return contain2D(&rect_box->range_box_x, &query->left) &&
+		   contain2D(&rect_box->range_box_y, &query->right);
 }
 
-/* Can this rectangle contain any rectangle from rect_box?  */
+/* Can any range from range_box be contained by this argument? */
 static bool
-contained4D(RangeBox *range_box, RectBox *rect_box)
+contained2D(RangeBox *range_box, Range *query)
 {
-	return contained2D(&range_box->left, &rect_box->range_box_x) &&
-		   contained2D(&range_box->right, &rect_box->range_box_y);
+	return FPle(range_box->left.low, query->high) &&
+		   FPge(range_box->left.high, query->low) &&
+		   FPle(range_box->right.low, query->high) &&
+		   FPge(range_box->right.high, query->low);
 }
 
-/* Can any range from range_box to be lower than this range? */
+/* Can any rectangle from rect_box be contained by this argument? */
 static bool
-isLower(Range *range, RangeBox *range_box)
+contained4D(RectBox *rect_box, RangeBox *query)
 {
-	return FPlt(range_box->left.low, range->low) &&
-		   FPlt(range_box->right.low, range->low);
+	return contained2D(&rect_box->range_box_x, &query->left) &&
+		   contained2D(&rect_box->range_box_y, &query->right);
 }
 
-/* Can any range from range_box to be higher than this range? */
+/* Can any range from range_box to be lower than this argument? */
 static bool
-isHigher(Range *range, RangeBox *range_box)
+lower2D(RangeBox *range_box, Range *query)
 {
-	return FPgt(range_box->left.high, range->high) &&
-		   FPgt(range_box->right.high, range->high);
+	return FPlt(range_box->left.low, query->low) &&
+		   FPlt(range_box->right.low, query->low);
 }
 
+/* Can any range from range_box to be higher than this argument? */
 static bool
-left4D(RangeBox *range_box, RectBox *rect_box)
+higher2D(RangeBox *range_box, Range *query)
 {
-	return isLower(&range_box->left, &rect_box->range_box_x);
+	return FPgt(range_box->left.high, query->high) &&
+		   FPgt(range_box->right.high, query->high);
 }
 
+/* Can any rectangle from rect_box be left of this argument? */
 static bool
-right4D(RangeBox *range_box, RectBox *rect_box)
+left4D(RectBox *rect_box, RangeBox *query)
 {
-	return isHigher(&range_box->left, &rect_box->range_box_x);
+	return lower2D(&rect_box->range_box_x, &query->left);
 }
 
+/* Can any rectangle from rect_box be right of this argument? */
 static bool
-below4D(RangeBox *range_box, RectBox *rect_box)
+right4D(RectBox *rect_box, RangeBox *query)
 {
-	return isLower(&range_box->right, &rect_box->range_box_y);
+	return higher2D(&rect_box->range_box_x, &query->left);
 }
 
+/* Can any rectangle from rect_box be below of this argument? */
 static bool
-above4D(RangeBox *range_box, RectBox *rect_box)
+below4D(RectBox *rect_box, RangeBox *query)
 {
-	return isHigher(&range_box->right, &rect_box->range_box_y);
+	return lower2D(&rect_box->range_box_y, &query->right);
+}
+
+/* Can any rectangle from rect_box be above of this argument? */
+static bool
+above4D(RectBox *rect_box, RangeBox *query)
+{
+	return higher2D(&rect_box->range_box_y, &query->right);
 }
 
 /*
@@ -350,28 +344,18 @@ spg_box_quad_config(PG_FUNCTION_ARGS)
 Datum
 spg_box_quad_choose(PG_FUNCTION_ARGS)
 {
-	spgChooseIn		*in = (spgChooseIn *) PG_GETARG_POINTER(0);
-	spgChooseOut	*out = (spgChooseOut *) PG_GETARG_POINTER(1);
-	BOX				*inBox = DatumGetBoxP(in->datum);
-	BOX				*centroid = DatumGetBoxP(in->prefixDatum);
-
-	uint8		quadrant;
-
-	if (in->allTheSame)
-	{
-		out->resultType = spgMatchNode;
-		/* nodeN will be set by core */
-		out->result.matchNode.levelAdd = 0;
-		out->result.matchNode.restDatum = BoxPGetDatum(inBox);
-		PG_RETURN_VOID();
-	}
-
-	quadrant = getQuadrant(centroid, inBox);
+	spgChooseIn *in = (spgChooseIn *) PG_GETARG_POINTER(0);
+	spgChooseOut *out = (spgChooseOut *) PG_GETARG_POINTER(1);
+	BOX		   *centroid = DatumGetBoxP(in->prefixDatum),
+			   *box = DatumGetBoxP(in->datum);
 
 	out->resultType = spgMatchNode;
-	out->result.matchNode.nodeN = quadrant;
-	out->result.matchNode.levelAdd = 1;
-	out->result.matchNode.restDatum = BoxPGetDatum(inBox);
+	out->result.matchNode.restDatum = BoxPGetDatum(box);
+
+	/* nodeN will be set by core, when allTheSame. */
+	if (!in->allTheSame)
+		out->result.matchNode.nodeN = getQuadrant(centroid, box);
+
 	PG_RETURN_VOID();
 }
 
@@ -451,122 +435,123 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 Datum
 spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 {
-	spgInnerConsistentIn   *in = (spgInnerConsistentIn *) PG_GETARG_POINTER(0);
-	spgInnerConsistentOut  *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
-	int						i;
-	MemoryContext			oldCtx;
-	RectBox				   *rect_box;
-	uint8					quadrant;
-	RangeBox			   *rectangle_centroid,
-						   *p_query_rect,
-						   *new_rect_box = NULL;
-
-	out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
+	spgInnerConsistentIn *in = (spgInnerConsistentIn *) PG_GETARG_POINTER(0);
+	spgInnerConsistentOut *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
+	int				i;
+	MemoryContext	old_ctx;
+	RectBox		   *rect_box;
+	uint8			quadrant;
+	RangeBox	   *centroid,
+				  **queries;
 
 	if (in->allTheSame)
 	{
 		/* Report that all nodes should be visited */
 		out->nNodes = in->nNodes;
+		out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
 		for (i = 0; i < in->nNodes; i++)
 			out->nodeNumbers[i] = i;
 
 		PG_RETURN_VOID();
 	}
 
+	/*
+	 * We are saving the traversal value or initialize it an unbounded
+	 * one, if we have just begun to walk the tree.
+	 */
 	if (in->traversalValue)
-	{
-		/* Here we get 4D bounded box (RectBox) from the traversal value. */
 		rect_box = in->traversalValue;
-	}
 	else
-	{
-		/*
-		 * Here we initialize the bounded box, because we have just
-		 * begun to walk the tree.
-		 */
-		rect_box = (RectBox *) palloc(sizeof(RectBox));
-		initializeUnboundedBox(rect_box);
-	}
+		rect_box = initRectBox();
 
-	rectangle_centroid = (RangeBox *) palloc(sizeof(RangeBox));
-	p_query_rect = (RangeBox *) palloc(sizeof(RangeBox));
-	boxPointerToRangeBox(DatumGetBoxP(in->prefixDatum), rectangle_centroid);
+	/*
+	 * We are casting the prefix and queries to RangeBoxes for ease of
+	 * the following operations.
+	 */
+	centroid = getRangeBox(DatumGetBoxP(in->prefixDatum));
+	queries = (RangeBox **) palloc(in->nkeys * sizeof(RangeBox *));
+	for (i = 0; i < in->nkeys; i++)
+		queries[i] = getRangeBox(DatumGetBoxP(in->scankeys[i].sk_argument));
 
+	/* Allocate enough memory for nodes */
 	out->nNodes = 0;
+	out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
 	out->traversalValues = (void **) palloc(sizeof(void *) * in->nNodes);
 
 	/*
-	 * We switch memory context, because we want to allocate memory for new
-	 * traversal values (new_rect_box) and pass these pieces of memory to
-	 * further call of this function..
+	 * We switch memory context, because we want to allocate memory for
+	 * new traversal values (next_rect_box) and pass these pieces of
+	 * memory to further call of this function.
 	 */
-	oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
+	old_ctx = MemoryContextSwitchTo(in->traversalMemoryContext);
 
 	for (quadrant = 0; quadrant < in->nNodes; quadrant++)
 	{
-		bool	   flag = true;
+		bool		flag;
+		RectBox	   *next_rect_box = nextRectBox(rect_box, centroid, quadrant);
 
-		if (new_rect_box == NULL)
-			new_rect_box = (RectBox *) palloc(sizeof(RectBox));
-
-		/* Calculate 4D RectBox */
-		evalRectBox(rect_box, rectangle_centroid, quadrant, new_rect_box);
-
-		for (i = 0; flag && i < in->nkeys; i++)
+		for (i = 0; i < in->nkeys; i++)
 		{
 			StrategyNumber strategy = in->scankeys[i].sk_strategy;
-
-			boxPointerToRangeBox(DatumGetBoxP(in->scankeys[i].sk_argument),
-								 p_query_rect);
 
 			switch (strategy)
 			{
 				case RTOverlapStrategyNumber:
-					flag = intersect4D(p_query_rect, new_rect_box);
+					flag = overlap4D(next_rect_box, queries[i]);
 					break;
 
 				case RTContainsStrategyNumber:
-					flag = contain4D(p_query_rect, new_rect_box);
+					flag = contain4D(next_rect_box, queries[i]);
 					break;
 
 				case RTContainedByStrategyNumber:
-					flag = contained4D(p_query_rect, new_rect_box);
+					flag = contained4D(next_rect_box, queries[i]);
 					break;
 
 				case RTLeftStrategyNumber:
-					flag = left4D(p_query_rect, new_rect_box);
+					flag = left4D(next_rect_box, queries[i]);
 					break;
 
 				case RTRightStrategyNumber:
-					flag = right4D(p_query_rect, new_rect_box);
+					flag = right4D(next_rect_box, queries[i]);
 					break;
 
 				case RTAboveStrategyNumber:
-					flag = above4D(p_query_rect, new_rect_box);
+					flag = above4D(next_rect_box, queries[i]);
 					break;
 
 				case RTBelowStrategyNumber:
-					flag = below4D(p_query_rect, new_rect_box);
+					flag = below4D(next_rect_box, queries[i]);
 					break;
 
 				default:
 					elog(ERROR, "unrecognized strategy: %d", strategy);
 			}
+
+			/* If any check is failed, we have found our answer. */
+			if (!flag)
+				break;
 		}
 
 		if (flag)
 		{
-			out->traversalValues[out->nNodes] = new_rect_box;
+			out->traversalValues[out->nNodes] = next_rect_box;
 			out->nodeNumbers[out->nNodes] = quadrant;
 			out->nNodes++;
-			new_rect_box = NULL;
+		}
+		else
+		{
+			/*
+			 * If this node is not selected, we don't need to keep
+			 * the next traversal value in the memory context.
+			 */
+			pfree(next_rect_box);
 		}
 	}
 
-	if (new_rect_box)
-		pfree(new_rect_box);
+	/* Switch back */
+	MemoryContextSwitchTo(old_ctx);
 
-	MemoryContextSwitchTo(oldCtx);
 	PG_RETURN_VOID();
 }
 
@@ -578,8 +563,8 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 {
 	spgLeafConsistentIn *in = (spgLeafConsistentIn *) PG_GETARG_POINTER(0);
 	spgLeafConsistentOut *out = (spgLeafConsistentOut *) PG_GETARG_POINTER(1);
-	BOX		   *leafBox = DatumGetBoxP(in->leafDatum);
-	bool		flag = true;
+	Datum		leaf = in->leafDatum;
+	bool		flag;
 	int			i;
 
 	/* All tests are exact. */
@@ -589,58 +574,55 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 	out->leafValue = in->leafDatum;
 
 	/* Perform the required comparison(s) */
-	for (i = 0; flag && i < in->nkeys; i++)
+	for (i = 0; i < in->nkeys; i++)
 	{
 		StrategyNumber strategy = in->scankeys[i].sk_strategy;
-		Datum keyDatum = in->scankeys[i].sk_argument;
+		Datum		query = in->scankeys[i].sk_argument;
 
 		switch (strategy)
 		{
 			case RTOverlapStrategyNumber:
-				flag = DatumGetBool(DirectFunctionCall2(box_overlap,
-											PointerGetDatum(leafBox),
-															keyDatum));
+				flag = DatumGetBool(DirectFunctionCall2(box_overlap, leaf,
+														query));
 				break;
 
 			case RTContainsStrategyNumber:
-				flag = DatumGetBool(DirectFunctionCall2(box_contain,
-											PointerGetDatum(leafBox),
-															keyDatum));
+				flag = DatumGetBool(DirectFunctionCall2(box_contain, leaf,
+														query));
 				break;
 
 			case RTContainedByStrategyNumber:
-				flag = DatumGetBool(DirectFunctionCall2(box_contained,
-											PointerGetDatum(leafBox),
-															keyDatum));
+				flag = DatumGetBool(DirectFunctionCall2(box_contained, leaf,
+														query));
 				break;
 
 			case RTLeftStrategyNumber:
-				flag = DatumGetBool(DirectFunctionCall2(box_left,
-											PointerGetDatum(leafBox),
-															keyDatum));
+				flag = DatumGetBool(DirectFunctionCall2(box_left, leaf,
+														query));
 				break;
 
 			case RTRightStrategyNumber:
-				flag = DatumGetBool(DirectFunctionCall2(box_right,
-											PointerGetDatum(leafBox),
-															keyDatum));
+				flag = DatumGetBool(DirectFunctionCall2(box_right, leaf,
+														query));
 				break;
 
 			case RTAboveStrategyNumber:
-				flag = DatumGetBool(DirectFunctionCall2(box_above,
-											PointerGetDatum(leafBox),
-															keyDatum));
+				flag = DatumGetBool(DirectFunctionCall2(box_above, leaf,
+														query));
 				break;
 
 			case RTBelowStrategyNumber:
-				flag = DatumGetBool(DirectFunctionCall2(box_below,
-											PointerGetDatum(leafBox),
-															keyDatum));
+				flag = DatumGetBool(DirectFunctionCall2(box_below, leaf,
+														query));
 				break;
 
 			default:
 				elog(ERROR, "unrecognized strategy: %d", strategy);
 		}
+
+		/* If any check is failed, we have found our answer. */
+		if (!flag)
+			break;
 	}
 
 	PG_RETURN_BOOL(flag);
