@@ -301,11 +301,25 @@ left4D(RectBox *rect_box, RangeBox *query)
 	return lower2D(&rect_box->range_box_x, &query->left);
 }
 
+/* Can any rectangle from rect_box does not extend the right of this argument? */
+static bool
+overLeft4D(RectBox *rect_box, RangeBox *query)
+{
+	return lower2D(&rect_box->range_box_x, &query->right);
+}
+
 /* Can any rectangle from rect_box be right of this argument? */
 static bool
 right4D(RectBox *rect_box, RangeBox *query)
 {
 	return higher2D(&rect_box->range_box_x, &query->left);
+}
+
+/* Can any rectangle from rect_box does not extend the left of this argument? */
+static bool
+overRight4D(RectBox *rect_box, RangeBox *query)
+{
+	return higher2D(&rect_box->range_box_x, &query->right);
 }
 
 /* Can any rectangle from rect_box be below of this argument? */
@@ -315,9 +329,23 @@ below4D(RectBox *rect_box, RangeBox *query)
 	return lower2D(&rect_box->range_box_y, &query->right);
 }
 
+/* Can any rectangle from rect_box does not extend above this argument? */
+static bool
+overBelow4D(RectBox *rect_box, RangeBox *query)
+{
+	return lower2D(&rect_box->range_box_y, &query->left);
+}
+
 /* Can any rectangle from rect_box be above of this argument? */
 static bool
 above4D(RectBox *rect_box, RangeBox *query)
+{
+	return higher2D(&rect_box->range_box_y, &query->right);
+}
+
+/* Can any rectangle from rect_box does not extend below of this argument? */
+static bool
+overAbove4D(RectBox *rect_box, RangeBox *query)
 {
 	return higher2D(&rect_box->range_box_y, &query->right);
 }
@@ -504,6 +532,7 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 					flag = contain4D(next_rect_box, queries[i]);
 					break;
 
+				case RTSameStrategyNumber:
 				case RTContainedByStrategyNumber:
 					flag = contained4D(next_rect_box, queries[i]);
 					break;
@@ -512,16 +541,32 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 					flag = left4D(next_rect_box, queries[i]);
 					break;
 
+				case RTOverLeftStrategyNumber:
+					flag = overLeft4D(next_rect_box, queries[i]);
+					break;
+
 				case RTRightStrategyNumber:
 					flag = right4D(next_rect_box, queries[i]);
+					break;
+
+				case RTOverRightStrategyNumber:
+					flag = overRight4D(next_rect_box, queries[i]);
 					break;
 
 				case RTAboveStrategyNumber:
 					flag = above4D(next_rect_box, queries[i]);
 					break;
 
+				case RTOverAboveStrategyNumber:
+					flag = overAbove4D(next_rect_box, queries[i]);
+					break;
+
 				case RTBelowStrategyNumber:
 					flag = below4D(next_rect_box, queries[i]);
+					break;
+
+				case RTOverBelowStrategyNumber:
+					flag = overBelow4D(next_rect_box, queries[i]);
 					break;
 
 				default:
@@ -596,8 +641,18 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 														query));
 				break;
 
+			case RTSameStrategyNumber:
+				flag = DatumGetBool(DirectFunctionCall2(box_same, leaf,
+														query));
+				break;
+
 			case RTLeftStrategyNumber:
 				flag = DatumGetBool(DirectFunctionCall2(box_left, leaf,
+														query));
+				break;
+
+			case RTOverLeftStrategyNumber:
+				flag = DatumGetBool(DirectFunctionCall2(box_overleft, leaf,
 														query));
 				break;
 
@@ -606,13 +661,28 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 														query));
 				break;
 
+			case RTOverRightStrategyNumber:
+				flag = DatumGetBool(DirectFunctionCall2(box_overright, leaf,
+														query));
+				break;
+
 			case RTAboveStrategyNumber:
 				flag = DatumGetBool(DirectFunctionCall2(box_above, leaf,
 														query));
 				break;
 
+			case RTOverAboveStrategyNumber:
+				flag = DatumGetBool(DirectFunctionCall2(box_overabove, leaf,
+														query));
+				break;
+
 			case RTBelowStrategyNumber:
 				flag = DatumGetBool(DirectFunctionCall2(box_below, leaf,
+														query));
+				break;
+
+			case RTOverBelowStrategyNumber:
+				flag = DatumGetBool(DirectFunctionCall2(box_overbelow, leaf,
 														query));
 				break;
 
