@@ -120,6 +120,7 @@ static float8 box_closept_lseg(Point *result, BOX *box, LSEG *lseg);
 
 /* Routines for circles */
 static float8 circle_ar(CIRCLE *circle);
+static bool circle_contain_point(CIRCLE *circle, Point *point);
 
 /* Routines for polygons */
 static void make_bound_box(POLYGON *poly);
@@ -5070,15 +5071,20 @@ circle_distance(PG_FUNCTION_ARGS)
 }
 
 
+static bool
+circle_contain_point(CIRCLE *circle, Point *point)
+{
+	return point_dt(&circle->center, point) <= circle->radius;
+}
+
+
 Datum
 circle_contain_pt(PG_FUNCTION_ARGS)
 {
 	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(0);
 	Point	   *point = PG_GETARG_POINT_P(1);
-	float8		d;
 
-	d = point_dt(&circle->center, point);
-	PG_RETURN_BOOL(d <= circle->radius);
+	PG_RETURN_BOOL(circle_contain_point(circle, point));
 }
 
 
@@ -5087,10 +5093,8 @@ pt_contained_circle(PG_FUNCTION_ARGS)
 {
 	Point	   *point = PG_GETARG_POINT_P(0);
 	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(1);
-	float8		d;
 
-	d = point_dt(&circle->center, point);
-	PG_RETURN_BOOL(d <= circle->radius);
+	PG_RETURN_BOOL(circle_contain_point(circle, point));
 }
 
 
