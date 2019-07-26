@@ -116,11 +116,15 @@ static bool box_contain_box(BOX *contains_box, BOX *contained_box);
 static bool box_contain_lseg(BOX *box, LSEG *lseg);
 static bool box_interpt_lseg(Point *result, BOX *box, LSEG *lseg);
 static float8 box_closept_point(Point *result, BOX *box, Point *point);
+static float8 box_closept_line(Point *result, BOX *box, LINE *line);
 static float8 box_closept_lseg(Point *result, BOX *box, LSEG *lseg);
 
 /* Routines for circles */
 static float8 circle_ar(CIRCLE *circle);
 static bool circle_contain_point(CIRCLE *circle, Point *point);
+
+/* Routines for paths */
+static float8 path_closept_point(Point *result, PATH *path, Point *pt);
 
 /* Routines for polygons */
 static void make_bound_box(POLYGON *poly);
@@ -128,7 +132,8 @@ static void poly_to_circle(CIRCLE *result, POLYGON *poly);
 static bool lseg_inside_poly(Point *a, Point *b, POLYGON *poly, int start);
 static bool poly_contain_poly(POLYGON *contains_poly, POLYGON *contained_poly);
 static bool plist_same(int npts, Point *p1, Point *p2);
-static float8 dist_ppoly_internal(Point *pt, POLYGON *poly);
+static float8 poly_closept_point(Point *result, POLYGON *poly, Point *pt);
+static float8 poly_closept_circle(Point *result, POLYGON *poly, CIRCLE *circle);
 
 /* Routines for encoding and decoding */
 static float8 single_decode(char *num, char **endptr_p,
@@ -2386,11 +2391,12 @@ dist_sp(PG_FUNCTION_ARGS)
 }
 
 static float8
-dist_ppath_internal(Point *pt, PATH *path)
+path_closept_point(Point *result, PATH *path, Point *pt)
 {
-	float8		result = 0.0;	/* keep compiler quiet */
+	float8		dist = 0.0;	/* keep compiler quiet */
 	bool		have_min = false;
 	float8		tmp;
+	Point		closept;
 	int			i;
 	LSEG		lseg;
 
@@ -2414,15 +2420,17 @@ dist_ppath_internal(Point *pt, PATH *path)
 		}
 
 		statlseg_construct(&lseg, &path->p[iprev], &path->p[i]);
-		tmp = lseg_closept_point(NULL, &lseg, pt);
-		if (!have_min || float8_lt(tmp, result))
+		tmp = lseg_closept_point(&closept, &lseg, pt);
+		if (!have_min || float8_lt(tmp, dist))
 		{
-			result = tmp;
+			dist = tmp;
+			if (result != NULL)
+				*result = closept;
 			have_min = true;
 		}
 	}
 
-	return result;
+	return dist;
 }
 
 /*
@@ -2434,7 +2442,7 @@ dist_ppath(PG_FUNCTION_ARGS)
 	Point	   *pt = PG_GETARG_POINT_P(0);
 	PATH	   *path = PG_GETARG_PATH_P(1);
 
-	PG_RETURN_FLOAT8(dist_ppath_internal(pt, path));
+	PG_RETURN_FLOAT8(path_closept_point(NULL, path, pt));
 }
 
 /*
@@ -2446,7 +2454,7 @@ dist_pathp(PG_FUNCTION_ARGS)
 	PATH	   *path = PG_GETARG_PATH_P(0);
 	Point	   *pt = PG_GETARG_POINT_P(1);
 
-	PG_RETURN_FLOAT8(dist_ppath_internal(pt, path));
+	PG_RETURN_FLOAT8(path_closept_point(NULL, path, pt));
 }
 
 /*
@@ -2527,17 +2535,21 @@ dist_bs(PG_FUNCTION_ARGS)
 Datum
 dist_lb(PG_FUNCTION_ARGS)
 {
-#ifdef NOT_USED
 	LINE	   *line = PG_GETARG_LINE_P(0);
 	BOX		   *box = PG_GETARG_BOX_P(1);
-#endif
 
+	PG_RETURN_FLOAT8(box_closept_line(NULL, box, line));
+}
+
+static float8
+box_closept_line(Point *result, BOX *box, LINE *line)
+{
 	/* need to think about this one for a while */
 	ereport(ERROR,
 			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("function \"dist_lb\" not implemented")));
+			 errmsg("operator is not implemented")));
 
-	PG_RETURN_NULL();
+	return 0.0;
 }
 
 /*
@@ -2546,31 +2558,24 @@ dist_lb(PG_FUNCTION_ARGS)
 Datum
 dist_bl(PG_FUNCTION_ARGS)
 {
-#ifdef NOT_USED
 	BOX		   *box = PG_GETARG_BOX_P(0);
 	LINE	   *line = PG_GETARG_LINE_P(1);
-#endif
 
-	/* need to think about this one for a while */
-	ereport(ERROR,
-			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("function \"dist_bl\" not implemented")));
-
-	PG_RETURN_NULL();
+	PG_RETURN_FLOAT8(box_closept_line(NULL, box, line));
 }
 
 static float8
-dist_cpoly_internal(CIRCLE *circle, POLYGON *poly)
+poly_closept_circle(Point *result, POLYGON *poly, CIRCLE *circle)
 {
-	float8		result;
+	float8		dist;
 
 	/* calculate distance to center, and subtract radius */
-	result = float8_mi(dist_ppoly_internal(&circle->center, poly),
-					   circle->radius);
-	if (result < 0.0)
-		result = 0.0;
+	dist = float8_mi(poly_closept_point(result, poly, &circle->center),
+					 circle->radius);
+	if (dist < 0.0)
+		dist = 0.0;
 
-	return result;
+	return dist;
 }
 
 /*
@@ -2582,7 +2587,7 @@ dist_cpoly(PG_FUNCTION_ARGS)
 	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(0);
 	POLYGON    *poly = PG_GETARG_POLYGON_P(1);
 
-	PG_RETURN_FLOAT8(dist_cpoly_internal(circle, poly));
+	PG_RETURN_FLOAT8(poly_closept_circle(NULL, poly, circle));
 }
 
 /*
@@ -2594,7 +2599,7 @@ dist_polyc(PG_FUNCTION_ARGS)
 	POLYGON    *poly = PG_GETARG_POLYGON_P(0);
 	CIRCLE	   *circle = PG_GETARG_CIRCLE_P(1);
 
-	PG_RETURN_FLOAT8(dist_cpoly_internal(circle, poly));
+	PG_RETURN_FLOAT8(poly_closept_circle(NULL, poly, circle));
 }
 
 /*
@@ -2606,7 +2611,7 @@ dist_ppoly(PG_FUNCTION_ARGS)
 	Point	   *point = PG_GETARG_POINT_P(0);
 	POLYGON    *poly = PG_GETARG_POLYGON_P(1);
 
-	PG_RETURN_FLOAT8(dist_ppoly_internal(point, poly));
+	PG_RETURN_FLOAT8(poly_closept_point(NULL, poly, point));
 }
 
 Datum
@@ -2615,15 +2620,16 @@ dist_polyp(PG_FUNCTION_ARGS)
 	POLYGON    *poly = PG_GETARG_POLYGON_P(0);
 	Point	   *point = PG_GETARG_POINT_P(1);
 
-	PG_RETURN_FLOAT8(dist_ppoly_internal(point, poly));
+	PG_RETURN_FLOAT8(poly_closept_point(NULL, poly, point));
 }
 
 static float8
-dist_ppoly_internal(Point *pt, POLYGON *poly)
+poly_closept_point(Point *result, POLYGON *poly, Point *pt)
 {
-	float8		result;
+	float8		dist;
 	float8		d;
 	int			i;
+	Point		closept;
 	LSEG		seg;
 
 	if (point_inside(pt, poly->npts, poly->p) != 0)
@@ -2634,7 +2640,7 @@ dist_ppoly_internal(Point *pt, POLYGON *poly)
 	seg.p[0].y = poly->p[0].y;
 	seg.p[1].x = poly->p[poly->npts - 1].x;
 	seg.p[1].y = poly->p[poly->npts - 1].y;
-	result = lseg_closept_point(NULL, &seg, pt);
+	dist = lseg_closept_point(result, &seg, pt);
 
 	/* check distances for other segments */
 	for (i = 0; i < poly->npts - 1; i++)
@@ -2643,12 +2649,16 @@ dist_ppoly_internal(Point *pt, POLYGON *poly)
 		seg.p[0].y = poly->p[i].y;
 		seg.p[1].x = poly->p[i + 1].x;
 		seg.p[1].y = poly->p[i + 1].y;
-		d = lseg_closept_point(NULL, &seg, pt);
-		if (float8_lt(d, result))
-			result = d;
+		d = lseg_closept_point(&closept, &seg, pt);
+		if (float8_lt(d, dist))
+		{
+			dist = d;
+			if (result != NULL)
+				*result = closept;
+		}
 	}
 
-	return result;
+	return dist;
 }
 
 
