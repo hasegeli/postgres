@@ -391,7 +391,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 
 			/*
 			 * Make sure the expression yields a type that's safe to store in
-			 * an index.  We need this defense because we have index opclasses
+			 * an index.  We need this defense because we have opclasses
 			 * for pseudo-types such as "record", and the actually stored type
 			 * had better be safe; eg, a named composite type is okay, an
 			 * anonymous record type is not.  The test is the same as for
@@ -666,7 +666,7 @@ UpdateIndexRelation(Oid indexoid,
  * accessMethodObjectId: OID of index AM to use
  * tableSpaceId: OID of tablespace to use
  * collationObjectId: array of collation OIDs, one per index column
- * classObjectId: array of index opclass OIDs, one per index column
+ * classObjectId: array of opclass OIDs, one per index column
  * coloptions: array of per-index-column indoption settings
  * reloptions: AM-specific options
  * flags: bitmask that can include any combination of these bits:

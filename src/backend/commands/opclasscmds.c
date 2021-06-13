@@ -20,6 +20,7 @@
 #include "access/genam.h"
 #include "access/hash.h"
 #include "access/htup_details.h"
+#include "access/ifam.h"
 #include "access/nbtree.h"
 #include "access/sysattr.h"
 #include "access/table.h"
@@ -344,7 +345,7 @@ DefineOpClass(CreateOpClassStmt *stmt)
 	Relation	rel;
 	HeapTuple	tup;
 	Form_pg_am	amform;
-	IndexAmRoutine *amroutine;
+	InterfaceAmRoutine *amroutine;
 	Datum		values[Natts_pg_opclass];
 	bool		nulls[Natts_pg_opclass];
 	AclResult	aclresult;
@@ -372,7 +373,7 @@ DefineOpClass(CreateOpClassStmt *stmt)
 
 	amform = (Form_pg_am) GETSTRUCT(tup);
 	amoid = amform->oid;
-	amroutine = GetIndexAmRoutineByAmId(amoid, false);
+	amroutine = GetInterfaceAmRoutineByAmId(amoid);
 	ReleaseSysCache(tup);
 
 	maxOpNumber = amroutine->amstrategies;
@@ -778,7 +779,7 @@ DefineOpFamily(CreateOpFamilyStmt *stmt)
 					   get_namespace_name(namespaceoid));
 
 	/* Get access method OID, throwing an error if it doesn't exist. */
-	amoid = get_index_am_oid(stmt->amname, false);
+	amoid = get_interface_or_index_am_oid(stmt->amname, false);
 
 	/* XXX Should we make any privilege check against the AM? */
 
@@ -814,7 +815,7 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 				maxProcNumber;	/* amsupport value */
 	HeapTuple	tup;
 	Form_pg_am	amform;
-	IndexAmRoutine *amroutine;
+	InterfaceAmRoutine *amroutine;
 
 	/* Get necessary info about access method */
 	tup = SearchSysCache1(AMNAME, CStringGetDatum(stmt->amname));
@@ -826,7 +827,7 @@ AlterOpFamily(AlterOpFamilyStmt *stmt)
 
 	amform = (Form_pg_am) GETSTRUCT(tup);
 	amoid = amform->oid;
-	amroutine = GetIndexAmRoutineByAmId(amoid, false);
+	amroutine = GetInterfaceAmRoutineByAmId(amoid);
 	ReleaseSysCache(tup);
 
 	maxOpNumber = amroutine->amstrategies;
@@ -873,7 +874,7 @@ AlterOpFamilyAdd(AlterOpFamilyStmt *stmt, Oid amoid, Oid opfamilyoid,
 				 int maxOpNumber, int maxProcNumber, int optsProcNumber,
 				 List *items)
 {
-	IndexAmRoutine *amroutine = GetIndexAmRoutineByAmId(amoid, false);
+	InterfaceAmRoutine *amroutine = GetInterfaceAmRoutineByAmId(amoid);
 	List	   *operators;		/* OpFamilyMember list for operators */
 	List	   *procedures;		/* OpFamilyMember list for support procs */
 	ListCell   *l;
@@ -1156,7 +1157,7 @@ assignOperTypes(OpFamilyMember *member, Oid amoid, Oid typeoid)
 		 * the family has been created but not yet populated with the required
 		 * operators.)
 		 */
-		IndexAmRoutine *amroutine = GetIndexAmRoutineByAmId(amoid, false);
+		InterfaceAmRoutine *amroutine = GetInterfaceAmRoutineByAmId(amoid);
 
 		if (!amroutine->amcanorderbyop)
 			ereport(ERROR,

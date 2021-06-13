@@ -2051,6 +2051,7 @@ _equalCreateAmStmt(const CreateAmStmt *a, const CreateAmStmt *b)
 	COMPARE_STRING_FIELD(amname);
 	COMPARE_NODE_FIELD(handler_name);
 	COMPARE_SCALAR_FIELD(amtype);
+	COMPARE_NODE_FIELD(implements);
 
 	return true;
 }

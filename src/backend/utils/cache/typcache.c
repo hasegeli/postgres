@@ -474,7 +474,7 @@ lookup_type_cache(Oid type_id, int flags)
 	{
 		Oid			opclass;
 
-		opclass = GetDefaultOpClass(type_id, BTREE_AM_OID);
+		opclass = GetDefaultOpClass(type_id, list_make1_oid(BTREE_AM_OID));
 		if (OidIsValid(opclass))
 		{
 			typentry->btree_opf = get_opclass_family(opclass);
@@ -515,7 +515,7 @@ lookup_type_cache(Oid type_id, int flags)
 	{
 		Oid			opclass;
 
-		opclass = GetDefaultOpClass(type_id, HASH_AM_OID);
+		opclass = GetDefaultOpClass(type_id, list_make1_oid(HASH_AM_OID));
 		if (OidIsValid(opclass))
 		{
 			typentry->hash_opf = get_opclass_family(opclass);

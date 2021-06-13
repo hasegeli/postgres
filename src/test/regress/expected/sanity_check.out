@@ -103,6 +103,7 @@ persons2|t
 persons3|t
 pg_aggregate|t
 pg_am|t
+pg_amimplements|t
 pg_amop|t
 pg_amproc|t
 pg_attrdef|t

@@ -16,8 +16,6 @@
 #include "access/amapi.h"
 #include "access/htup_details.h"
 #include "catalog/pg_am.h"
-#include "catalog/pg_opclass.h"
-#include "utils/builtins.h"
 #include "utils/syscache.h"
 
 
@@ -78,10 +76,8 @@ GetIndexAmRoutineByAmId(Oid amoid, bool noerror)
 			ReleaseSysCache(tuple);
 			return NULL;
 		}
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("access method \"%s\" is not of type %s",
-						NameStr(amform->amname), "INDEX")));
+		elog(ERROR, "access method \"%s\" is not of type INDEX",
+			 NameStr(amform->amname));
 	}
 
 	amhandler = amform->amhandler;
@@ -94,50 +90,12 @@ GetIndexAmRoutineByAmId(Oid amoid, bool noerror)
 			ReleaseSysCache(tuple);
 			return NULL;
 		}
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("index access method \"%s\" does not have a handler",
-						NameStr(amform->amname))));
+		elog(ERROR, "access method \"%s\" does not have a handler",
+			 NameStr(amform->amname));
 	}
 
 	ReleaseSysCache(tuple);
 
 	/* And finally, call the handler function to get the API struct. */
 	return GetIndexAmRoutine(amhandler);
-}
-
-
-/*
- * Ask appropriate access method to validate the specified opclass.
- */
-Datum
-amvalidate(PG_FUNCTION_ARGS)
-{
-	Oid			opclassoid = PG_GETARG_OID(0);
-	bool		result;
-	HeapTuple	classtup;
-	Form_pg_opclass classform;
-	Oid			amoid;
-	IndexAmRoutine *amroutine;
-
-	classtup = SearchSysCache1(CLAOID, ObjectIdGetDatum(opclassoid));
-	if (!HeapTupleIsValid(classtup))
-		elog(ERROR, "cache lookup failed for operator class %u", opclassoid);
-	classform = (Form_pg_opclass) GETSTRUCT(classtup);
-
-	amoid = classform->opcmethod;
-
-	ReleaseSysCache(classtup);
-
-	amroutine = GetIndexAmRoutineByAmId(amoid, false);
-
-	if (amroutine->amvalidate == NULL)
-		elog(ERROR, "function amvalidate is not defined for index access method %u",
-			 amoid);
-
-	result = amroutine->amvalidate(opclassoid);
-
-	pfree(amroutine);
-
-	PG_RETURN_BOOL(result);
 }

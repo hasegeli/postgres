@@ -26,6 +26,7 @@
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_amimplements.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_opclass.h"
@@ -2004,6 +2005,41 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 	}
 }
 
+List *
+GetCompatibleAccessMethods(indexAccessMethodId)
+{
+	List	   *result;
+	Relation	rel;
+	ScanKeyData	skey[1];
+	SysScanDesc	scan;
+	HeapTuple	tup;
+
+	result = list_make1_oid(indexAccessMethodId);
+
+	rel = table_open(AmimplementsRelationId, AccessShareLock);
+
+	ScanKeyInit(&skey[0],
+				Anum_pg_amimplements_amiamid,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(indexAccessMethodId));
+
+	scan = systable_beginscan(rel, AmimplementsAmidSeqnoIndexId, true,
+							  NULL, 1, skey);
+
+	while (HeapTupleIsValid(tup = systable_getnext(scan)))
+	{
+		Form_pg_amimplements amimplements = (Form_pg_amimplements) GETSTRUCT(tup);
+
+		result = lappend_oid(result, amimplements->amiparent);
+	}
+
+	systable_endscan(scan);
+
+	table_close(rel, AccessShareLock);
+
+	return result;
+}
+
 /*
  * Resolve possibly-defaulted operator class specification
  *
@@ -2016,15 +2052,19 @@ ResolveOpClass(List *opclass, Oid attrType,
 {
 	char	   *schemaname;
 	char	   *opcname;
+	List	   *amoids;
+	ListCell   *listptr;
 	HeapTuple	tuple;
 	Form_pg_opclass opform;
 	Oid			opClassId,
 				opInputType;
 
+	amoids = GetCompatibleAccessMethods(accessMethodId);
+
 	if (opclass == NIL)
 	{
 		/* no operator class specified, so find the default */
-		opClassId = GetDefaultOpClass(attrType, accessMethodId);
+		opClassId = GetDefaultOpClass(attrType, amoids);
 		if (!OidIsValid(opClassId))
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -2047,15 +2087,27 @@ ResolveOpClass(List *opclass, Oid attrType,
 		Oid			namespaceId;
 
 		namespaceId = LookupExplicitNamespace(schemaname, false);
-		tuple = SearchSysCache3(CLAAMNAMENSP,
-								ObjectIdGetDatum(accessMethodId),
-								PointerGetDatum(opcname),
-								ObjectIdGetDatum(namespaceId));
+
+		foreach(listptr, amoids)
+		{
+			tuple = SearchSysCache3(CLAAMNAMENSP,
+									ObjectIdGetDatum(lfirst_oid(listptr)),
+									PointerGetDatum(opcname),
+									ObjectIdGetDatum(namespaceId));
+			if (HeapTupleIsValid(tuple))
+				break;
+		}
 	}
 	else
 	{
 		/* Unqualified opclass name, so search the search path */
-		opClassId = OpclassnameGetOpcid(accessMethodId, opcname);
+		foreach(listptr, amoids)
+		{
+			opClassId = OpclassnameGetOpcid(lfirst_oid(listptr), opcname);
+			if (OidIsValid(opClassId))
+				break;
+		}
+
 		if (!OidIsValid(opClassId))
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -2092,18 +2144,17 @@ ResolveOpClass(List *opclass, Oid attrType,
 /*
  * GetDefaultOpClass
  *
- * Given the OIDs of a datatype and an access method, find the default
+ * Given the OIDs of a datatype and access methods, find the default
  * operator class, if any.  Returns InvalidOid if there is none.
  */
 Oid
-GetDefaultOpClass(Oid type_id, Oid am_id)
+GetDefaultOpClass(Oid type_id, List *am_ids)
 {
 	Oid			result = InvalidOid;
 	int			nexact = 0;
 	int			ncompatible = 0;
 	int			ncompatiblepreferred = 0;
 	Relation	rel;
-	ScanKeyData skey[1];
 	SysScanDesc scan;
 	HeapTuple	tup;
 	TYPCATEGORY tcategory;
@@ -2127,20 +2178,25 @@ GetDefaultOpClass(Oid type_id, Oid am_id)
 	 */
 	rel = table_open(OperatorClassRelationId, AccessShareLock);
 
-	ScanKeyInit(&skey[0],
-				Anum_pg_opclass_opcmethod,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(am_id));
-
-	scan = systable_beginscan(rel, OpclassAmNameNspIndexId, true,
-							  NULL, 1, skey);
+	scan = systable_beginscan(rel, InvalidOid, false, NULL, 0, NULL);
 
 	while (HeapTupleIsValid(tup = systable_getnext(scan)))
 	{
+		bool		ammatch = false;
+		ListCell   *listptr;
 		Form_pg_opclass opclass = (Form_pg_opclass) GETSTRUCT(tup);
 
+		foreach(listptr, am_ids)
+		{
+			if (lfirst_oid(listptr) == opclass->opcmethod)
+			{
+				ammatch = true;
+				break;
+			}
+		}
+
 		/* ignore altogether if not a default opclass */
-		if (!opclass->opcdefault)
+		if (!ammatch || !opclass->opcdefault)
 			continue;
 		if (opclass->opcintype == type_id)
 		{

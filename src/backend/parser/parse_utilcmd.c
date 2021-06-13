@@ -2031,7 +2031,7 @@ get_opclass(Oid opclass, Oid actual_datatype)
 		elog(ERROR, "cache lookup failed for opclass %u", opclass);
 	opc_rec = (Form_pg_opclass) GETSTRUCT(ht_opc);
 
-	if (GetDefaultOpClass(actual_datatype, opc_rec->opcmethod) != opclass)
+	if (GetDefaultOpClass(actual_datatype, list_make1_oid(opc_rec->opcmethod)) != opclass)
 	{
 		/* For simplicity, we always schema-qualify the name */
 		char	   *nsp_name = get_namespace_name(opc_rec->opcnamespace);
@@ -2313,7 +2313,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 		 * else dump and reload will produce a different index (breaking
 		 * pg_upgrade in particular).
 		 */
-		if (index_rel->rd_rel->relam != get_index_am_oid(DEFAULT_INDEX_TYPE, false))
+		if (index_rel->rd_rel->relam != BTREE_AM_OID)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("index \"%s\" is not a btree", index_name),
@@ -2360,7 +2360,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 				get_attoptions(RelationGetRelid(index_rel), i + 1);
 
 				defopclass = GetDefaultOpClass(attform->atttypid,
-											   index_rel->rd_rel->relam);
+											   list_make1_oid(index_rel->rd_rel->relam));
 				if (indclass->values[i] != defopclass ||
 					attform->attcollation != index_rel->rd_indcollation[i] ||
 					attoptions != (Datum) 0 ||

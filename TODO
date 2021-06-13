@@ -1,0 +1,4 @@
+* Move GetCompatibleAccessMethods
+* Redo GetDefaultOpClass()
+* Move btvalidate and hashvalidate
+* Change ammethod on CREATE OPERATOR FAMILY/CLASS

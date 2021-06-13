@@ -44,7 +44,7 @@ extern bool CheckIndexCompatible(Oid oldId,
 								 const char *accessMethodName,
 								 List *attributeList,
 								 List *exclusionOpNames);
-extern Oid	GetDefaultOpClass(Oid type_id, Oid am_id);
+extern Oid	GetDefaultOpClass(Oid type_id, List *am_ids);
 extern Oid	ResolveOpClass(List *opclass, Oid attrType,
 						   const char *accessMethodName, Oid accessMethodId);
 
@@ -137,7 +137,7 @@ extern Datum transformGenericOptions(Oid catalogId,
 
 /* commands/amcmds.c */
 extern ObjectAddress CreateAccessMethod(CreateAmStmt *stmt);
-extern Oid	get_index_am_oid(const char *amname, bool missing_ok);
+extern Oid	get_interface_or_index_am_oid(const char *amname, bool missing_ok);
 extern Oid	get_table_am_oid(const char *amname, bool missing_ok);
 extern Oid	get_am_oid(const char *amname, bool missing_ok);
 extern char *get_am_name(Oid amOid);

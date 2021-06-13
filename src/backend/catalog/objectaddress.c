@@ -1672,7 +1672,7 @@ get_object_address_opcf(ObjectType objtype, List *object, bool missing_ok)
 	ObjectAddress address;
 
 	/* XXX no missing_ok support here */
-	amoid = get_index_am_oid(strVal(linitial(object)), false);
+	amoid = get_interface_or_index_am_oid(strVal(linitial(object)), false);
 	object = list_copy_tail(object, 1);
 
 	switch (objtype)

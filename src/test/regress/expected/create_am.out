@@ -1,8 +1,18 @@
 --
 -- Create access method tests
 --
--- Make gist2 over gisthandler. In fact, it would be a synonym to gist.
+-- Add synonyms to btree and gist
+CREATE ACCESS METHOD btree2 TYPE INDEX HANDLER bthandler IMPLEMENTS (ordering);
 CREATE ACCESS METHOD gist2 TYPE INDEX HANDLER gisthandler;
+-- Verify IMPLEMENTS
+CREATE ACCESS METHOD bogus TYPE INTERFACE HANDLER heap_tableam_handler IMPLEMENTS (ordering);
+ERROR:  function heap_tableam_handler must return type interface_am_handler
+CREATE ACCESS METHOD bogus TYPE TABLE HANDLER heap_tableam_handler IMPLEMENTS (ordering);
+ERROR:  only index access methods can implement interfaces
+CREATE ACCESS METHOD bogus TYPE INDEX HANDLER bthandler IMPLEMENTS (ordering, ordering);
+ERROR:  access method "ordering" would be implemented more than once
+CREATE ACCESS METHOD bogus TYPE INDEX HANDLER bthandler IMPLEMENTS (heap);
+ERROR:  access method "heap" is not of type INTERFACE
 -- Verify return type checks for handlers
 CREATE ACCESS METHOD bogus TYPE INDEX HANDLER int4in;
 ERROR:  function int4in(internal) does not exist

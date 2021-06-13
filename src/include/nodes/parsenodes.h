@@ -2516,6 +2516,7 @@ typedef struct CreateAmStmt
 	char	   *amname;			/* access method name */
 	List	   *handler_name;	/* handler function name */
 	char		amtype;			/* type of access method */
+	List	   *implements;		/* implemented interface access methods */
 } CreateAmStmt;
 
 /* ----------------------

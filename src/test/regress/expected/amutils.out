@@ -149,6 +149,12 @@ select amname, prop, pg_indexam_has_property(a.oid, prop) as p
  btree  | can_exclude   | t
  btree  | can_include   | t
  btree  | bogus         | 
+ btree2 | can_order     | t
+ btree2 | can_unique    | t
+ btree2 | can_multi_col | t
+ btree2 | can_exclude   | t
+ btree2 | can_include   | t
+ btree2 | bogus         | 
  gin    | can_order     | f
  gin    | can_unique    | f
  gin    | can_multi_col | t
@@ -173,7 +179,7 @@ select amname, prop, pg_indexam_has_property(a.oid, prop) as p
  spgist | can_exclude   | t
  spgist | can_include   | t
  spgist | bogus         | 
-(36 rows)
+(42 rows)
 
 --
 -- additional checks for pg_index_column_has_property

@@ -55,6 +55,7 @@ DECLARE_UNIQUE_INDEX_PKEY(pg_am_oid_index, 2652, AmOidIndexId, on pg_am using bt
 /*
  * Allowed values for amtype
  */
+#define AMTYPE_INTERFACE				'n' /* interface access method */
 #define AMTYPE_INDEX					'i' /* index access method */
 #define AMTYPE_TABLE					't' /* table access method */
 

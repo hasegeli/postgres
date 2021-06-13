@@ -2,8 +2,15 @@
 -- Create access method tests
 --
 
--- Make gist2 over gisthandler. In fact, it would be a synonym to gist.
+-- Add synonyms to btree and gist
+CREATE ACCESS METHOD btree2 TYPE INDEX HANDLER bthandler IMPLEMENTS (ordering);
 CREATE ACCESS METHOD gist2 TYPE INDEX HANDLER gisthandler;
+
+-- Verify IMPLEMENTS
+CREATE ACCESS METHOD bogus TYPE INTERFACE HANDLER heap_tableam_handler IMPLEMENTS (ordering);
+CREATE ACCESS METHOD bogus TYPE TABLE HANDLER heap_tableam_handler IMPLEMENTS (ordering);
+CREATE ACCESS METHOD bogus TYPE INDEX HANDLER bthandler IMPLEMENTS (ordering, ordering);
+CREATE ACCESS METHOD bogus TYPE INDEX HANDLER bthandler IMPLEMENTS (heap);
 
 -- Verify return type checks for handlers
 CREATE ACCESS METHOD bogus TYPE INDEX HANDLER int4in;

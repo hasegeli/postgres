@@ -20,6 +20,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_amimplements.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -31,7 +32,9 @@
 #include "utils/syscache.h"
 
 
+static void StoreCatalogAmimpments(Oid implementing, List *implements);
 static Oid	lookup_am_handler_func(List *handler_name, char amtype);
+static Oid get_am_type_oid(const char *amname, char amtype, char amtype2, bool missing_ok);
 static const char *get_am_type_string(char amtype);
 
 
@@ -50,6 +53,8 @@ CreateAccessMethod(CreateAmStmt *stmt)
 	bool		nulls[Natts_pg_am];
 	Datum		values[Natts_pg_am];
 	HeapTuple	tup;
+	List	   *implementsoids;
+	ListCell   *listptr;
 
 	rel = table_open(AccessMethodRelationId, RowExclusiveLock);
 
@@ -76,6 +81,30 @@ CreateAccessMethod(CreateAmStmt *stmt)
 	 * Get the handler function oid, verifying the AM type while at it.
 	 */
 	amhandler = lookup_am_handler_func(stmt->handler_name, stmt->amtype);
+
+	/*
+	 * Determine the list of OIDs of the implemented access methods
+	 */
+	implementsoids = NIL;
+	foreach(listptr, stmt->implements)
+	{
+		char	   *name = strVal(lfirst(listptr));
+		Oid			oid = get_am_type_oid(name, AMTYPE_INTERFACE, '\0', false);
+
+		/* Reject duplications */
+		if (list_member_oid(implementsoids, oid))
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_TABLE),
+					 errmsg("access method \"%s\" would be implemented more than once",
+							name)));
+
+		implementsoids = lappend_oid(implementsoids, oid);
+	}
+
+	if (implementsoids != NIL && stmt->amtype != AMTYPE_INDEX)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("only index access methods can implement interfaces")));
 
 	/*
 	 * Insert tuple into pg_am.
@@ -112,7 +141,63 @@ CreateAccessMethod(CreateAmStmt *stmt)
 
 	table_close(rel, RowExclusiveLock);
 
+	StoreCatalogAmimpments(amoid, implementsoids);
+
 	return myself;
+}
+
+/*
+ * StoreCatalogAmimplements
+ *      Updates the system catalogs with proper implements information.
+ */
+static void
+StoreCatalogAmimpments(Oid implementing, List *implements)
+{
+	int			seq;
+	ListCell   *listptr;
+	Relation	amirelation;
+	ObjectAddress childobject,
+				parentobject;
+	Datum		values[Natts_pg_amimplements];
+	bool		nulls[Natts_pg_amimplements];
+	HeapTuple	tuple;
+
+	AssertArg(OidIsValid(implementing));
+
+	/* Prepare to insert into pg_amimplements */
+	amirelation = table_open(AmimplementsRelationId, RowExclusiveLock);
+	values[Anum_pg_amimplements_amiamid - 1] = ObjectIdGetDatum(implementing);
+	memset(nulls, 0, sizeof(nulls));
+
+	/* Prepare the dependency objects */
+	parentobject.classId = AccessMethodRelationId;
+	parentobject.objectSubId = 0;
+	childobject.classId = AccessMethodRelationId;
+	childobject.objectId = implementing;
+	childobject.objectSubId = 0;
+
+	seq = 1;
+	foreach(listptr, implements)
+	{
+		Oid			oid = lfirst_oid(listptr);
+
+		AssertArg(OidIsValid(listptr));
+
+		/* Store pg_amimplements entry */
+		values[Anum_pg_amimplements_amiparent - 1] = ObjectIdGetDatum(oid);
+		values[Anum_pg_amimplements_amiseqno - 1] = Int32GetDatum(seq);
+		tuple = heap_form_tuple(RelationGetDescr(amirelation), values, nulls);
+		CatalogTupleInsert(amirelation, tuple);
+		heap_freetuple(tuple);
+
+		/* Store a dependency too */
+		parentobject.objectId = oid;
+		recordDependencyOn(&childobject, &parentobject, DEPENDENCY_NORMAL);
+
+		seq++;
+	}
+
+	table_close(amirelation, RowExclusiveLock);
 }
 
 /*
@@ -123,10 +208,10 @@ CreateAccessMethod(CreateAmStmt *stmt)
  * true, just return InvalidOid.
  *
  * If amtype is not '\0', an error is raised if the AM found is not of the
- * given type.
+ * given types.
  */
 static Oid
-get_am_type_oid(const char *amname, char amtype, bool missing_ok)
+get_am_type_oid(const char *amname, char amtype, char amtype2, bool missing_ok)
 {
 	HeapTuple	tup;
 	Oid			oid = InvalidOid;
@@ -138,11 +223,21 @@ get_am_type_oid(const char *amname, char amtype, bool missing_ok)
 
 		if (amtype != '\0' &&
 			amform->amtype != amtype)
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-					 errmsg("access method \"%s\" is not of type %s",
-							NameStr(amform->amname),
-							get_am_type_string(amtype))));
+		{
+			if (amtype2 == '\0')
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("access method \"%s\" is not of type %s",
+								NameStr(amform->amname),
+								get_am_type_string(amtype))));
+			else if (amform->amtype != amtype2)
+				ereport(ERROR,
+						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						 errmsg("access method \"%s\" is not of type %s or %s",
+								NameStr(amform->amname),
+								get_am_type_string(amtype),
+								get_am_type_string(amtype2))));
+		}
 
 		oid = amform->oid;
 		ReleaseSysCache(tup);
@@ -156,13 +251,13 @@ get_am_type_oid(const char *amname, char amtype, bool missing_ok)
 }
 
 /*
- * get_index_am_oid - given an access method name, look up its OID
- *		and verify it corresponds to an index AM.
+ * get_interface_or_index_am_oid - given an access method name, look up its OID
+ *		and verify it corresponds to an index or interface AM.
  */
 Oid
-get_index_am_oid(const char *amname, bool missing_ok)
+get_interface_or_index_am_oid(const char *amname, bool missing_ok)
 {
-	return get_am_type_oid(amname, AMTYPE_INDEX, missing_ok);
+	return get_am_type_oid(amname, AMTYPE_INTERFACE, AMTYPE_INDEX, missing_ok);
 }
 
 /*
@@ -172,7 +267,7 @@ get_index_am_oid(const char *amname, bool missing_ok)
 Oid
 get_table_am_oid(const char *amname, bool missing_ok)
 {
-	return get_am_type_oid(amname, AMTYPE_TABLE, missing_ok);
+	return get_am_type_oid(amname, AMTYPE_TABLE, '\0', missing_ok);
 }
 
 /*
@@ -182,7 +277,7 @@ get_table_am_oid(const char *amname, bool missing_ok)
 Oid
 get_am_oid(const char *amname, bool missing_ok)
 {
-	return get_am_type_oid(amname, '\0', missing_ok);
+	return get_am_type_oid(amname, '\0', '\0', missing_ok);
 }
 
 /*
@@ -213,6 +308,8 @@ get_am_type_string(char amtype)
 {
 	switch (amtype)
 	{
+		case AMTYPE_INTERFACE:
+			return "INTERFACE";
 		case AMTYPE_INDEX:
 			return "INDEX";
 		case AMTYPE_TABLE:
@@ -248,6 +345,9 @@ lookup_am_handler_func(List *handler_name, char amtype)
 	/* check that handler has the correct return type */
 	switch (amtype)
 	{
+		case AMTYPE_INTERFACE:
+			expectedType = INTERFACE_AM_HANDLEROID;
+			break;
 		case AMTYPE_INDEX:
 			expectedType = INDEX_AM_HANDLEROID;
 			break;

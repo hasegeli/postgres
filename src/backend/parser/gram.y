@@ -422,6 +422,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				execute_param_clause using_clause returning_clause
 				opt_enum_val_list enum_val_list table_func_column_list
 				create_generic_options alter_generic_options
+				OptImplement
 				relation_expr_list dostmt_opt_list
 				transform_element_list transform_type_list
 				TriggerTransitions TriggerReferencing
@@ -668,10 +669,11 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	HANDLER HAVING HEADER_P HOLD HOUR_P
 
-	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IMPORT_P IN_P INCLUDE
+	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE
+	IMPLEMENTS IMPLICIT_P IMPORT_P IN_P INCLUDE
 	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY INLINE_P
 	INNER_P INOUT INPUT_P INSENSITIVE INSERT INSTEAD INT_P INTEGER
-	INTERSECT INTERVAL INTO INVOKER IS ISNULL ISOLATION
+	INTERFACE INTERSECT INTERVAL INTO INVOKER IS ISNULL ISOLATION
 
 	JOIN
 
@@ -5323,19 +5325,26 @@ row_security_cmd:
  *****************************************************************************/
 
 CreateAmStmt: CREATE ACCESS METHOD name TYPE_P am_type HANDLER handler_name
+			  OptImplement
 				{
 					CreateAmStmt *n = makeNode(CreateAmStmt);
 					n->amname = $4;
 					n->handler_name = $8;
 					n->amtype = $6;
+					n->implements = $9;
 					$$ = (Node *) n;
 				}
 		;
 
 am_type:
-			INDEX			{ $$ = AMTYPE_INDEX; }
+			INTERFACE		{ $$ = AMTYPE_INTERFACE; }
+		|	INDEX			{ $$ = AMTYPE_INDEX; }
 		|	TABLE			{ $$ = AMTYPE_TABLE; }
 		;
+
+OptImplement: IMPLEMENTS '(' name_list ')'	{ $$ = $3; }
+			  | /*EMPTY*/					{ $$ = NIL; }
+			  ;
 
 /*****************************************************************************
  *
@@ -15579,6 +15588,7 @@ unreserved_keyword:
 			| IF_P
 			| IMMEDIATE
 			| IMMUTABLE
+			| IMPLEMENTS
 			| IMPLICIT_P
 			| IMPORT_P
 			| INCLUDE
@@ -15593,6 +15603,7 @@ unreserved_keyword:
 			| INSENSITIVE
 			| INSERT
 			| INSTEAD
+			| INTERFACE
 			| INVOKER
 			| ISOLATION
 			| KEY
@@ -16130,6 +16141,7 @@ bare_label_keyword:
 			| ILIKE
 			| IMMEDIATE
 			| IMMUTABLE
+			| IMPLEMENTS
 			| IMPLICIT_P
 			| IMPORT_P
 			| IN_P
@@ -16150,6 +16162,7 @@ bare_label_keyword:
 			| INSTEAD
 			| INT_P
 			| INTEGER
+			| INTERFACE
 			| INTERVAL
 			| INVOKER
 			| IS

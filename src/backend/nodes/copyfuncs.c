@@ -4442,6 +4442,7 @@ _copyCreateAmStmt(const CreateAmStmt *from)
 	COPY_STRING_FIELD(amname);
 	COPY_NODE_FIELD(handler_name);
 	COPY_SCALAR_FIELD(amtype);
+	COPY_NODE_FIELD(implements);
 
 	return newnode;
 }

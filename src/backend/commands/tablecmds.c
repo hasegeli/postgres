@@ -16816,7 +16816,7 @@ ComputePartitionAttrs(ParseState *pstate, Relation rel, List *partParams, AttrNu
 
 		if (!pelem->opclass)
 		{
-			partopclass[attn] = GetDefaultOpClass(atttype, am_oid);
+			partopclass[attn] = GetDefaultOpClass(atttype, list_make1_oid(am_oid));
 
 			if (!OidIsValid(partopclass[attn]))
 			{

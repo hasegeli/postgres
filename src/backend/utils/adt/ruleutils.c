@@ -11175,7 +11175,7 @@ get_opclass_name(Oid opclass, Oid actual_datatype,
 	opcrec = (Form_pg_opclass) GETSTRUCT(ht_opc);
 
 	if (!OidIsValid(actual_datatype) ||
-		GetDefaultOpClass(actual_datatype, opcrec->opcmethod) != opclass)
+		GetDefaultOpClass(actual_datatype, list_make1_oid(opcrec->opcmethod)) != opclass)
 	{
 		/* Okay, we need the opclass name.  Do we need to qualify it? */
 		opcname = NameStr(opcrec->opcname);

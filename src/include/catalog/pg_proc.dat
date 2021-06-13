@@ -906,6 +906,16 @@
   prorettype => 'table_am_handler', proargtypes => 'internal',
   prosrc => 'heap_tableam_handler' },
 
+# Interface access method handlers
+{ oid => '5', descr => 'ordering interface access method handler',
+  proname => 'ordering_ifam_handler', provolatile => 'v',
+  prorettype => 'interface_am_handler', proargtypes => 'internal',
+  prosrc => 'ordering_ifam_handler' },
+{ oid => '7', descr => 'hashing interface access method handler',
+  proname => 'hashing_ifam_handler', provolatile => 'v',
+  prorettype => 'interface_am_handler', proargtypes => 'internal',
+  prosrc => 'hashing_ifam_handler' },
+
 # Index access method handlers
 { oid => '330', descr => 'btree index access method handler',
   proname => 'bthandler', provolatile => 'v', prorettype => 'index_am_handler',
@@ -7300,6 +7310,13 @@
 { oid => '3117', descr => 'I/O',
   proname => 'fdw_handler_out', prorettype => 'cstring',
   proargtypes => 'fdw_handler', prosrc => 'fdw_handler_out' },
+{ oid => '561', descr => 'I/O',
+  proname => 'interface_am_handler_in', proisstrict => 'f',
+  prorettype => 'interface_am_handler', proargtypes => 'cstring',
+  prosrc => 'interface_am_handler_in' },
+{ oid => '562', descr => 'I/O',
+  proname => 'interface_am_handler_out', prorettype => 'cstring',
+  proargtypes => 'interface_am_handler', prosrc => 'interface_am_handler_out' },
 { oid => '326', descr => 'I/O',
   proname => 'index_am_handler_in', proisstrict => 'f',
   prorettype => 'index_am_handler', proargtypes => 'cstring',

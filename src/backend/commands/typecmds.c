@@ -2309,7 +2309,7 @@ findRangeSubOpclass(List *opcname, Oid subtype)
 	}
 	else
 	{
-		opcid = GetDefaultOpClass(subtype, BTREE_AM_OID);
+		opcid = GetDefaultOpClass(subtype, list_make1_oid(BTREE_AM_OID));
 		if (!OidIsValid(opcid))
 		{
 			/* We spell the error message identically to ResolveOpClass */
