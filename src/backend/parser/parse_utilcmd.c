@@ -122,6 +122,7 @@ static CreateStatsStmt *generateClonedExtStatsStmt(RangeVar *heapRel,
 												   Oid heapRelid, Oid source_statsid);
 static List *get_collation(Oid collation, Oid actual_datatype);
 static List *get_opclass(Oid opclass, Oid actual_datatype);
+static char *get_opclassam(Oid opclass, Oid idxam);
 static void transformIndexConstraints(CreateStmtContext *cxt);
 static IndexStmt *transformIndexConstraint(Constraint *constraint,
 										   CreateStmtContext *cxt);
@@ -1759,6 +1760,7 @@ generateClonedIndexStmt(RangeVar *heapRel, Relation source_idx,
 		iparam->opclass = get_opclass(indclass->values[keyno], keycoltype);
 		iparam->opclassopts =
 			untransformRelOptions(get_attoptions(source_relid, keyno + 1));
+		iparam->opclassam = get_opclassam(indclass->values[keyno], idxrelrec->relam);
 
 		iparam->ordering = SORTBY_DEFAULT;
 		iparam->nulls_ordering = SORTBY_NULLS_DEFAULT;
@@ -2038,6 +2040,44 @@ get_opclass(Oid opclass, Oid actual_datatype)
 		char	   *opc_name = pstrdup(NameStr(opc_rec->opcname));
 
 		result = list_make2(makeString(nsp_name), makeString(opc_name));
+	}
+
+	ReleaseSysCache(ht_opc);
+	return result;
+}
+
+/*
+ * get_opclassam		- fetch name of an index operator class access method
+ *
+ * If the opclass access method is the same as the index access method, then
+ * the return value is NULL.
+ */
+char *
+get_opclassam(Oid opclass, Oid idxam)
+{
+	char	   *result = NULL;
+	HeapTuple	ht_opc;
+	Form_pg_opclass opc_rec;
+
+	ht_opc = SearchSysCache1(CLAOID, ObjectIdGetDatum(opclass));
+	if (!HeapTupleIsValid(ht_opc))
+		elog(ERROR, "cache lookup failed for opclass %u", opclass);
+	opc_rec = (Form_pg_opclass) GETSTRUCT(ht_opc);
+
+	if (opc_rec->opcmethod != idxam)
+	{
+		HeapTuple	ht_am;
+		Form_pg_am	amrec;
+
+		ht_am = SearchSysCache1(AMOID, ObjectIdGetDatum(opc_rec->opcmethod));
+		if (!HeapTupleIsValid(ht_am))
+			elog(ERROR, "cache lookup failed for access method %u",
+				 opc_rec->opcmethod);
+		amrec = (Form_pg_am) GETSTRUCT(ht_am);
+
+		result = pstrdup(NameStr(amrec->amname));
+
+		ReleaseSysCache(ht_am);
 	}
 
 	ReleaseSysCache(ht_opc);
@@ -2658,6 +2698,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 		iparam->collation = NIL;
 		iparam->opclass = NIL;
 		iparam->opclassopts = NIL;
+		iparam->opclassam = NULL;
 		index->indexIncludingParams = lappend(index->indexIncludingParams, iparam);
 	}
 

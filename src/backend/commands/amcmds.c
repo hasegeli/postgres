@@ -20,6 +20,7 @@
 #include "catalog/indexing.h"
 #include "catalog/objectaccess.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_amimplements.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -31,7 +32,9 @@
 #include "utils/syscache.h"
 
 
+static void StoreCatalogAmimpments(Oid implementing, List *implements);
 static Oid	lookup_am_handler_func(List *handler_name, char amtype);
+static Oid get_am_type_oid(const char *amname, char amtype, bool missing_ok);
 static const char *get_am_type_string(char amtype);
 
 
@@ -50,6 +53,8 @@ CreateAccessMethod(CreateAmStmt *stmt)
 	bool		nulls[Natts_pg_am];
 	Datum		values[Natts_pg_am];
 	HeapTuple	tup;
+	List	   *implementsoids;
+	ListCell   *listptr;
 
 	rel = table_open(AccessMethodRelationId, RowExclusiveLock);
 
@@ -76,6 +81,30 @@ CreateAccessMethod(CreateAmStmt *stmt)
 	 * Get the handler function oid, verifying the AM type while at it.
 	 */
 	amhandler = lookup_am_handler_func(stmt->handler_name, stmt->amtype);
+
+	/*
+	 * Determine the list of OIDs of the implemented access methods
+	 */
+	implementsoids = NIL;
+	foreach(listptr, stmt->implements)
+	{
+		char	   *name = strVal(lfirst(listptr));
+		Oid			oid = get_am_type_oid(name, AMTYPE_INDEX, false);
+
+		/* Reject duplications */
+		if (list_member_oid(implementsoids, oid))
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_TABLE),
+					 errmsg("access method \"%s\" would be implemented more than once",
+							name)));
+
+		implementsoids = lappend_oid(implementsoids, oid);
+	}
+
+	if (implementsoids != NIL && stmt->amtype != AMTYPE_INDEX)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("only index access methods can implement other access methods")));
 
 	/*
 	 * Insert tuple into pg_am.
@@ -112,7 +141,63 @@ CreateAccessMethod(CreateAmStmt *stmt)
 
 	table_close(rel, RowExclusiveLock);
 
+	StoreCatalogAmimpments(amoid, implementsoids);
+
 	return myself;
+}
+
+/*
+ * StoreCatalogAmimplements
+ *      Updates the system catalogs with proper implements information.
+ */
+static void
+StoreCatalogAmimpments(Oid implementing, List *implements)
+{
+	int			seq;
+	ListCell   *listptr;
+	Relation	amirelation;
+	ObjectAddress childobject,
+				parentobject;
+	Datum		values[Natts_pg_amimplements];
+	bool		nulls[Natts_pg_amimplements];
+	HeapTuple	tuple;
+
+	AssertArg(OidIsValid(implementing));
+
+	/* Prepare to insert into pg_amimplements */
+	amirelation = table_open(AmimplementsRelationId, RowExclusiveLock);
+	values[Anum_pg_amimplements_amiamid - 1] = ObjectIdGetDatum(implementing);
+	memset(nulls, 0, sizeof(nulls));
+
+	/* Prepare the dependency objects */
+	parentobject.classId = AccessMethodRelationId;
+	parentobject.objectSubId = 0;
+	childobject.classId = AccessMethodRelationId;
+	childobject.objectId = implementing;
+	childobject.objectSubId = 0;
+
+	seq = 1;
+	foreach(listptr, implements)
+	{
+		Oid			oid = lfirst_oid(listptr);
+
+		AssertArg(OidIsValid(listptr));
+
+		/* Store pg_amimplements entry */
+		values[Anum_pg_amimplements_amiparent - 1] = ObjectIdGetDatum(oid);
+		values[Anum_pg_amimplements_amiseqno - 1] = Int32GetDatum(seq);
+		tuple = heap_form_tuple(RelationGetDescr(amirelation), values, nulls);
+		CatalogTupleInsert(amirelation, tuple);
+		heap_freetuple(tuple);
+
+		/* Store a dependency too */
+		parentobject.objectId = oid;
+		recordDependencyOn(&childobject, &parentobject, DEPENDENCY_NORMAL);
+
+		seq++;
+	}
+
+	table_close(amirelation, RowExclusiveLock);
 }
 
 /*

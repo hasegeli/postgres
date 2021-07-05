@@ -3,7 +3,12 @@
 --
 
 -- Make gist2 over gisthandler. In fact, it would be a synonym to gist.
-CREATE ACCESS METHOD gist2 TYPE INDEX HANDLER gisthandler;
+CREATE ACCESS METHOD gist2 TYPE INDEX HANDLER gisthandler IMPLEMENTS (gist);
+
+-- Verify IMPLEMENTS
+CREATE ACCESS METHOD bogus TYPE INDEX HANDLER bthandler IMPLEMENTS (heap);
+CREATE ACCESS METHOD bogus TYPE INDEX HANDLER bthandler IMPLEMENTS (btree, btree);
+CREATE ACCESS METHOD bogus TYPE TABLE HANDLER heap_tableam_handler IMPLEMENTS (btree);
 
 -- Verify return type checks for handlers
 CREATE ACCESS METHOD bogus TYPE INDEX HANDLER int4in;
@@ -12,6 +17,25 @@ CREATE ACCESS METHOD bogus TYPE INDEX HANDLER heap_tableam_handler;
 
 -- Try to create gist2 index on fast_emp4000: fail because opclass doesn't exist
 CREATE INDEX grect2ind2 ON fast_emp4000 USING gist2 (home_base);
+
+-- Try it again using the gist opclass
+CREATE INDEX grect2ind2 ON fast_emp4000 USING gist2 (home_base USING gist);
+
+-- Now check the results from plain indexscan; temporarily drop existing
+-- index grect2ind to ensure it doesn't capture the plan
+BEGIN;
+DROP INDEX grect2ind;
+SET enable_seqscan = OFF;
+SET enable_indexscan = ON;
+SET enable_bitmapscan = OFF;
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
+SELECT count(*) FROM fast_emp4000 WHERE home_base && '(1000,1000,0,0)'::box;
+
+ROLLBACK;
+
+DROP INDEX grect2ind2;
 
 -- Make operator class for boxes using gist2
 CREATE OPERATOR CLASS box_ops DEFAULT

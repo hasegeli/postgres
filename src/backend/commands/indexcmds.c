@@ -26,6 +26,7 @@
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_amimplements.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
 #include "catalog/pg_opclass.h"
@@ -797,6 +798,8 @@ DefineIndex(Oid relationId,
 	 * look up the access method, verify it can handle the requested features
 	 */
 	accessMethodName = stmt->accessMethod;
+	if (accessMethodName == NULL)
+		accessMethodName = DEFAULT_INDEX_TYPE;
 	tuple = SearchSysCache1(AMNAME, PointerGetDatum(accessMethodName));
 	if (!HeapTupleIsValid(tuple))
 	{
@@ -1879,13 +1882,29 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 
 		collationOidP[attn] = attcollation;
 
-		/*
-		 * Identify the opclass to use.
-		 */
-		classOidP[attn] = ResolveOpClass(attribute->opclass,
-										 atttype,
-										 accessMethodName,
-										 accessMethodId);
+		{
+			const char *opclassamName;
+			Oid			opclassamId;
+
+			if (attribute->opclassam)
+			{
+				opclassamName = attribute->opclassam;
+				opclassamId = get_index_am_oid(opclassamName, false);
+			}
+			else
+			{
+				opclassamName = accessMethodName;
+				opclassamId = accessMethodId;
+			}
+
+			/*
+			* Identify the opclass to use.
+			*/
+			classOidP[attn] = ResolveOpClass(attribute->opclass,
+											atttype,
+											opclassamName,
+											opclassamId);
+		}
 
 		/*
 		 * Identify the exclusion operator, if any.

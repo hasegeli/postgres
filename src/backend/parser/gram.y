@@ -363,7 +363,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <str>		copy_file_name
 				access_method_clause attr_name
-				table_access_method_clause name cursor_name file_name
+				name cursor_name file_name
 				opt_index_name cluster_index_specification
 
 %type <list>	func_name handler_name qual_Op qual_all_Op subquery_Op
@@ -422,6 +422,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				execute_param_clause using_clause returning_clause
 				opt_enum_val_list enum_val_list table_func_column_list
 				create_generic_options alter_generic_options
+				OptImplement
 				relation_expr_list dostmt_opt_list
 				transform_element_list transform_type_list
 				TriggerTransitions TriggerReferencing
@@ -668,7 +669,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	HANDLER HAVING HEADER_P HOLD HOUR_P
 
-	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IMPORT_P IN_P INCLUDE
+	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE
+	IMPLEMENTS IMPLICIT_P IMPORT_P IN_P INCLUDE
 	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY INLINE_P
 	INNER_P INOUT INPUT_P INSENSITIVE INSERT INSTEAD INT_P INTEGER
 	INTERSECT INTERVAL INTO INVOKER IS ISNULL ISOLATION
@@ -3267,7 +3269,7 @@ copy_generic_opt_arg_list_item:
  *****************************************************************************/
 
 CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
-			OptInherit OptPartitionSpec table_access_method_clause OptWith
+			OptInherit OptPartitionSpec access_method_clause OptWith
 			OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
@@ -3286,7 +3288,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name '('
-			OptTableElementList ')' OptInherit OptPartitionSpec table_access_method_clause
+			OptTableElementList ')' OptInherit OptPartitionSpec access_method_clause
 			OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
@@ -3305,7 +3307,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF any_name
-			OptTypedTableElementList OptPartitionSpec table_access_method_clause
+			OptTypedTableElementList OptPartitionSpec access_method_clause
 			OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
@@ -3325,7 +3327,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name OF any_name
-			OptTypedTableElementList OptPartitionSpec table_access_method_clause
+			OptTypedTableElementList OptPartitionSpec access_method_clause
 			OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
@@ -3346,7 +3348,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 				}
 		| CREATE OptTemp TABLE qualified_name PARTITION OF qualified_name
 			OptTypedTableElementList PartitionBoundSpec OptPartitionSpec
-			table_access_method_clause OptWith OnCommitOption OptTableSpace
+			access_method_clause OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->relpersistence = $2;
@@ -3366,7 +3368,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name PARTITION OF
 			qualified_name OptTypedTableElementList PartitionBoundSpec OptPartitionSpec
-			table_access_method_clause OptWith OnCommitOption OptTableSpace
+			access_method_clause OptWith OnCommitOption OptTableSpace
 				{
 					CreateStmt *n = makeNode(CreateStmt);
 					$7->relpersistence = $2;
@@ -4059,7 +4061,7 @@ part_elem: ColId opt_collate opt_class
 				}
 		;
 
-table_access_method_clause:
+access_method_clause:
 			USING name							{ $$ = $2; }
 			| /*EMPTY*/							{ $$ = NULL; }
 		;
@@ -4227,7 +4229,7 @@ CreateAsStmt:
 		;
 
 create_as_target:
-			qualified_name opt_column_list table_access_method_clause
+			qualified_name opt_column_list access_method_clause
 			OptWith OnCommitOption OptTableSpace
 				{
 					$$ = makeNode(IntoClause);
@@ -4286,7 +4288,7 @@ CreateMatViewStmt:
 		;
 
 create_mv_target:
-			qualified_name opt_column_list table_access_method_clause opt_reloptions OptTableSpace
+			qualified_name opt_column_list access_method_clause opt_reloptions OptTableSpace
 				{
 					$$ = makeNode(IntoClause);
 					$$->rel = $1;
@@ -5323,11 +5325,13 @@ row_security_cmd:
  *****************************************************************************/
 
 CreateAmStmt: CREATE ACCESS METHOD name TYPE_P am_type HANDLER handler_name
+			  OptImplement
 				{
 					CreateAmStmt *n = makeNode(CreateAmStmt);
 					n->amname = $4;
 					n->handler_name = $8;
 					n->amtype = $6;
+					n->implements = $9;
 					$$ = (Node *) n;
 				}
 		;
@@ -5336,6 +5340,10 @@ am_type:
 			INDEX			{ $$ = AMTYPE_INDEX; }
 		|	TABLE			{ $$ = AMTYPE_TABLE; }
 		;
+
+OptImplement: IMPLEMENTS '(' name_list ')'	{ $$ = $3; }
+			  | /*EMPTY*/					{ $$ = NIL; }
+			  ;
 
 /*****************************************************************************
  *
@@ -7383,18 +7391,13 @@ opt_index_name:
 			| /*EMPTY*/								{ $$ = NULL; }
 		;
 
-access_method_clause:
-			USING name								{ $$ = $2; }
-			| /*EMPTY*/								{ $$ = DEFAULT_INDEX_TYPE; }
-		;
-
 index_params:	index_elem							{ $$ = list_make1($1); }
 			| index_params ',' index_elem			{ $$ = lappend($1, $3); }
 		;
 
 
 index_elem_options:
-	opt_collate opt_class opt_asc_desc opt_nulls_order
+	opt_collate opt_class access_method_clause opt_asc_desc opt_nulls_order
 		{
 			$$ = makeNode(IndexElem);
 			$$->name = NULL;
@@ -7403,10 +7406,11 @@ index_elem_options:
 			$$->collation = $1;
 			$$->opclass = $2;
 			$$->opclassopts = NIL;
-			$$->ordering = $3;
-			$$->nulls_ordering = $4;
+			$$->opclassam = $3;
+			$$->ordering = $4;
+			$$->nulls_ordering = $5;
 		}
-	| opt_collate any_name reloptions opt_asc_desc opt_nulls_order
+	| opt_collate any_name reloptions access_method_clause opt_asc_desc opt_nulls_order
 		{
 			$$ = makeNode(IndexElem);
 			$$->name = NULL;
@@ -7415,8 +7419,9 @@ index_elem_options:
 			$$->collation = $1;
 			$$->opclass = $2;
 			$$->opclassopts = $3;
-			$$->ordering = $4;
-			$$->nulls_ordering = $5;
+			$$->opclassam = $4;
+			$$->ordering = $5;
+			$$->nulls_ordering = $6;
 		}
 	;
 
@@ -15579,6 +15584,7 @@ unreserved_keyword:
 			| IF_P
 			| IMMEDIATE
 			| IMMUTABLE
+			| IMPLEMENTS
 			| IMPLICIT_P
 			| IMPORT_P
 			| INCLUDE
@@ -16130,6 +16136,7 @@ bare_label_keyword:
 			| ILIKE
 			| IMMEDIATE
 			| IMMUTABLE
+			| IMPLEMENTS
 			| IMPLICIT_P
 			| IMPORT_P
 			| IN_P

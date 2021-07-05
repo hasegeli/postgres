@@ -717,6 +717,7 @@ typedef struct IndexElem
 	List	   *collation;		/* name of collation; NIL = default */
 	List	   *opclass;		/* name of desired opclass; NIL = default */
 	List	   *opclassopts;	/* opclass-specific options, or NIL */
+	char	   *opclassam;		/* opclass access method or NULL */
 	SortByDir	ordering;		/* ASC/DESC/default */
 	SortByNulls nulls_ordering; /* FIRST/LAST/default */
 } IndexElem;
@@ -2516,6 +2517,7 @@ typedef struct CreateAmStmt
 	char	   *amname;			/* access method name */
 	List	   *handler_name;	/* handler function name */
 	char		amtype;			/* type of access method */
+	List	   *implements;		/* implemented interface access methods */
 } CreateAmStmt;
 
 /* ----------------------
